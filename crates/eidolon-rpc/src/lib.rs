@@ -1,6 +1,6 @@
 use alloy_primitives::{Address, U64, U256};
 use eidolon_evm::Executor;
-use jsonrpsee::core::async_trait;
+use jsonrpsee::core::{RpcResult, async_trait};
 use jsonrpsee::proc_macros::rpc;
 use parking_lot::RwLock;
 use std::sync::Arc;
@@ -10,17 +10,17 @@ use tracing::info;
 /// These are the methods Metamask will try to call.
 #[rpc(server)]
 pub trait EidolonApi {
-    /// Returns the Chain ID (We use 31337 for local dev)
+    /// Returns the Chain ID
     #[method(name = "eth_chainId")]
-    fn chain_id(&self) -> U64;
+    fn chain_id(&self) -> RpcResult<U64>; // Return type must be RpcResult<T>
 
     /// Returns the balance of an address
     #[method(name = "eth_getBalance")]
-    fn get_balance(&self, address: Address, _block: Option<String>) -> U256;
+    fn get_balance(&self, address: Address, _block: Option<String>) -> RpcResult<U256>;
 
     /// A custom "God Mode" method to set balance
     #[method(name = "tenderly_setBalance")]
-    fn set_balance(&self, address: Address, amount: U256) -> bool;
+    fn set_balance(&self, address: Address, amount: U256) -> RpcResult<bool>;
 }
 
 /// 2. The Implementation
@@ -39,24 +39,26 @@ impl EidolonRpc {
 
 #[async_trait]
 impl EidolonApiServer for EidolonRpc {
-    fn chain_id(&self) -> U64 {
-        // 31337 is the standard "Anvil/Hardhat" dev chain ID
-        U64::from(31337)
+    fn chain_id(&self) -> RpcResult<U64> {
+        // Wrap success in Ok()
+        Ok(U64::from(31337))
     }
 
-    fn get_balance(&self, address: Address, _block: Option<String>) -> U256 {
-        // Acquire a READ lock (multiple readers allowed)
-        let mut executor = self.executor.write(); // Using write lock for simplicity due to cache DB mutable needs
+    fn get_balance(&self, address: Address, _block: Option<String>) -> RpcResult<U256> {
+        let mut executor = self.executor.write();
         let bal = executor.get_balance(address).unwrap_or(U256::ZERO);
         info!("🔍 eth_getBalance({:?}) -> {}", address, bal);
-        bal
+
+        // Wrap success in Ok()
+        Ok(bal)
     }
 
-    fn set_balance(&self, address: Address, amount: U256) -> bool {
-        // Acquire a WRITE lock (exclusive access)
+    fn set_balance(&self, address: Address, amount: U256) -> RpcResult<bool> {
         let mut executor = self.executor.write();
         executor.set_balance(address, amount);
         info!("🧙 tenderly_setBalance({:?}) -> {}", address, amount);
-        true
+
+        // Wrap success in Ok()
+        Ok(true)
     }
 }

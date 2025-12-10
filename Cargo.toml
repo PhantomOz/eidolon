@@ -10,7 +10,7 @@ resolver = "2"
 revm = { version = "14.0", features = ["std", "secp256k1"] }
 
 # Ethereum Types (Address, U256)
-alloy-primitives = "0.8"
+alloy-primitives = { version = "0.8", features = ["serde"] }
 alloy-sol-types = "0.8"
 
 # Error Handling & Async

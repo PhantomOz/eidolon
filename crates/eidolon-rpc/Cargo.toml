@@ -12,4 +12,4 @@ anyhow = { workspace = true }
 tracing = { workspace = true }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-std = { version = "0.50.0", package = "parking_lot" } # Faster locks than std::sync
+parking_lot = "0.12" # Faster locks than std::sync
