@@ -5,3 +5,16 @@ members = [
 ]
 resolver = "2"
 
+[workspace.dependencies]
+# The EVM Implementation
+revm = { version = "14.0", features = ["std", "secp256k1"] }
+
+# Ethereum Types (Address, U256)
+alloy-primitives = "0.8"
+alloy-sol-types = "0.8"
+
+# Error Handling & Async
+anyhow = "1.0"
+tokio = { version = "1.40", features = ["full"] }
+tracing = "0.1"
+tracing-subscriber = "0.3"

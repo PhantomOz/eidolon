@@ -4,3 +4,6 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+revm = { workspace = true }
+alloy-primitives = { workspace = true }
+anyhow = { workspace = true }
