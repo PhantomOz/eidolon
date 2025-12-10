@@ -36,3 +36,27 @@ impl EidolonRpc {
         Self { executor }
     }
 }
+
+#[async_trait]
+impl EidolonApiServer for EidolonRpc {
+    fn chain_id(&self) -> U64 {
+        // 31337 is the standard "Anvil/Hardhat" dev chain ID
+        U64::from(31337)
+    }
+
+    fn get_balance(&self, address: Address, _block: Option<String>) -> U256 {
+        // Acquire a READ lock (multiple readers allowed)
+        let mut executor = self.executor.write(); // Using write lock for simplicity due to cache DB mutable needs
+        let bal = executor.get_balance(address).unwrap_or(U256::ZERO);
+        info!("🔍 eth_getBalance({:?}) -> {}", address, bal);
+        bal
+    }
+
+    fn set_balance(&self, address: Address, amount: U256) -> bool {
+        // Acquire a WRITE lock (exclusive access)
+        let mut executor = self.executor.write();
+        executor.set_balance(address, amount);
+        info!("🧙 tenderly_setBalance({:?}) -> {}", address, amount);
+        true
+    }
+}
