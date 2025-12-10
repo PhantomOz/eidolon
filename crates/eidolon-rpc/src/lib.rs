@@ -2,9 +2,10 @@ use alloy_primitives::{Address, U64, U256};
 use eidolon_evm::Executor;
 use jsonrpsee::core::{RpcResult, async_trait};
 use jsonrpsee::proc_macros::rpc;
+use jsonrpsee::types::ErrorObject;
 use parking_lot::RwLock;
 use std::sync::Arc;
-use tracing::info;
+use tracing::{error, info};
 
 /// 1. Define the JSON-RPC API Contract
 /// These are the methods Metamask will try to call.
@@ -46,11 +47,23 @@ impl EidolonApiServer for EidolonRpc {
 
     fn get_balance(&self, address: Address, _block: Option<String>) -> RpcResult<U256> {
         let mut executor = self.executor.write();
-        let bal = executor.get_balance(address).unwrap_or(U256::ZERO);
-        info!("🔍 eth_getBalance({:?}) -> {}", address, bal);
+        match executor.get_balance(address) {
+            Ok(bal) => {
+                info!("🔍 eth_getBalance({:?}) -> {}", address, bal);
+                Ok(bal)
+            }
+            Err(e) => {
+                // Log the real error to your terminal
+                error!("❌ Fetch Failed: {:?}", e);
 
-        // Wrap success in Ok()
-        Ok(bal)
+                // Return the error to the user/curl
+                Err(ErrorObject::owned(
+                    -32000,
+                    format!("Internal Error: {:?}", e),
+                    None::<()>,
+                ))
+            }
+        }
     }
 
     fn set_balance(&self, address: Address, amount: U256) -> RpcResult<bool> {

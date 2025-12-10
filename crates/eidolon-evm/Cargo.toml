@@ -7,3 +7,4 @@ edition = "2024"
 revm = { workspace = true }
 alloy-primitives = { workspace = true }
 anyhow = { workspace = true }
+eidolon-forkdb = { path = "../../crates/eidolon-forkdb" }

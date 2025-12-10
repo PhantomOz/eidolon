@@ -1,4 +1,4 @@
-use alloy_primitives::{Address, B256, U256};
+use alloy_primitives::{Address, B256, U64, U256};
 use anyhow::Result;
 use revm::{
     Database, DatabaseRef,
@@ -19,14 +19,14 @@ pub struct ForkConfig {
 /// The Backend that fetches data from RPC
 pub struct RpcBackend {
     config: ForkConfig,
-    client: reqwest::blocking::Client, // Using blocking for simplicity in Phase 3
+    agent: ureq::Agent,
 }
 
 impl RpcBackend {
     pub fn new(config: ForkConfig) -> Self {
         Self {
             config,
-            client: reqwest::blocking::Client::new(),
+            agent: ureq::Agent::new(),
         }
     }
 
@@ -40,11 +40,10 @@ impl RpcBackend {
         });
 
         let res: serde_json::Value = self
-            .client
+            .agent
             .post(&self.config.rpc_url)
-            .json(&body)
-            .send()?
-            .json()?;
+            .send_json(body)?
+            .into_json()?;
 
         // Basic error handling
         if let Some(err) = res.get("error") {
@@ -63,18 +62,20 @@ impl DatabaseRef for RpcBackend {
     fn basic_ref(&self, address: Address) -> Result<Option<AccountInfo>, Self::Error> {
         info!("🌍 Fetching Account: {:?}", address);
 
-        // 1. Fetch Balance
+        // 1. Fetch Balance (U256 handles hex strings automatically)
         let bal_hex = self.call_rpc("eth_getBalance", serde_json::json!([address, "latest"]))?;
         let balance: U256 = serde_json::from_value(bal_hex)?;
 
         // 2. Fetch Nonce
+        // FIX: Deserialize into U64 first (which handles "0x..."), then cast to u64
         let nonce_hex = self.call_rpc(
             "eth_getTransactionCount",
             serde_json::json!([address, "latest"]),
         )?;
-        let nonce: u64 = serde_json::from_value(nonce_hex)?;
+        let nonce_alloy: U64 = serde_json::from_value(nonce_hex)?;
+        let nonce = nonce_alloy.to::<u64>(); // Safe cast
 
-        // 3. Fetch Code (Smart Contract Bytecode)
+        // 3. Fetch Code
         let code_hex = self.call_rpc("eth_getCode", serde_json::json!([address, "latest"]))?;
         let code_bytes: alloy_primitives::Bytes = serde_json::from_value(code_hex)?;
 
@@ -112,7 +113,18 @@ impl DatabaseRef for RpcBackend {
         Ok(val)
     }
 
-    fn block_hash_ref(&self, number: U256) -> Result<B256, Self::Error> {
+    fn block_hash_ref(&self, number: u64) -> Result<B256, Self::Error> {
         Ok(B256::ZERO) // Simplified for now
     }
+}
+
+/// We wrap our RpcBackend in a CacheDB so we write to memory but read from RPC.
+pub type ForkDB = CacheDB<RpcBackend>;
+
+pub fn new_fork_db(rpc_url: String) -> ForkDB {
+    let backend = RpcBackend::new(ForkConfig {
+        rpc_url,
+        block_number: None,
+    });
+    CacheDB::new(backend)
 }
