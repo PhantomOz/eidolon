@@ -22,3 +22,17 @@ pub trait EidolonApi {
     #[method(name = "tenderly_setBalance")]
     fn set_balance(&self, address: Address, amount: U256) -> bool;
 }
+
+/// 2. The Implementation
+/// Holds the shared state of the EVM.
+pub struct EidolonRpc {
+    // Arc = Atomic Reference Count (Shared ownership)
+    // RwLock = Read/Write Lock (Safe mutability across threads)
+    executor: Arc<RwLock<Executor>>,
+}
+
+impl EidolonRpc {
+    pub fn new(executor: Arc<RwLock<Executor>>) -> Self {
+        Self { executor }
+    }
+}
