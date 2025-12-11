@@ -4,7 +4,8 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-revm = { workspace = true }
-alloy-primitives = { workspace = true }
+revm = { workspace = true, features = ["serde"]}
+alloy-primitives = { workspace = true, features = ["serde"] }
 anyhow = { workspace = true }
+serde = { version = "1.0", features = ["derive", "rc"] }
 eidolon-forkdb = { path = "../../crates/eidolon-forkdb" }

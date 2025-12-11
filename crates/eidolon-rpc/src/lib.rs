@@ -1,5 +1,6 @@
 use alloy_primitives::{Address, B256, Bytes, U64, U256};
 use eidolon_evm::Executor;
+use eidolon_evm::tracer::TraceStep;
 use jsonrpsee::core::{RpcResult, async_trait};
 use jsonrpsee::proc_macros::rpc;
 use jsonrpsee::types::ErrorObject;
@@ -35,6 +36,9 @@ pub trait EidolonApi {
     /// 2. NEW: Execution (Write state)
     #[method(name = "eth_sendTransaction")]
     fn send_transaction(&self, request: CallRequest) -> RpcResult<B256>;
+
+    #[method(name = "debug_traceTransaction")]
+    fn trace_transaction(&self, request: CallRequest) -> RpcResult<Vec<TraceStep>>;
 
     /// A custom "God Mode" method to set balance
     #[method(name = "tenderly_setBalance")]
@@ -133,6 +137,27 @@ impl EidolonApiServer for EidolonRpc {
                     None::<()>,
                 ))
             }
+        }
+    }
+
+    fn trace_transaction(&self, request: CallRequest) -> RpcResult<Vec<TraceStep>> {
+        let mut executor = self.executor.write();
+        let caller = request.from.unwrap_or(Address::ZERO);
+        let value = request.value.unwrap_or(U256::ZERO);
+        let data = request.data.unwrap_or_default();
+
+        info!(
+            "🕵️ debug_traceTransaction: from={:?} to={:?}",
+            caller, request.to
+        );
+
+        match executor.trace_transaction(caller, request.to, value, data) {
+            Ok(tracer) => Ok(tracer.steps),
+            Err(e) => Err(ErrorObject::owned(
+                -32000,
+                format!("Trace Failed: {:?}", e),
+                None::<()>,
+            )),
         }
     }
 
