@@ -1,11 +1,21 @@
-use alloy_primitives::{Address, U64, U256};
+use alloy_primitives::{Address, B256, Bytes, U64, U256};
 use eidolon_evm::Executor;
 use jsonrpsee::core::{RpcResult, async_trait};
 use jsonrpsee::proc_macros::rpc;
 use jsonrpsee::types::ErrorObject;
 use parking_lot::RwLock;
+use serde::Deserialize;
 use std::sync::Arc;
 use tracing::{error, info};
+
+#[derive(Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct CallRequest {
+    pub from: Option<Address>,
+    pub to: Address,
+    pub value: Option<U256>,
+    pub data: Option<Bytes>,
+}
 
 /// 1. Define the JSON-RPC API Contract
 /// These are the methods Metamask will try to call.
@@ -18,6 +28,13 @@ pub trait EidolonApi {
     /// Returns the balance of an address
     #[method(name = "eth_getBalance")]
     fn get_balance(&self, address: Address, _block: Option<String>) -> RpcResult<U256>;
+
+    #[method(name = "eth_call")]
+    fn call(&self, request: CallRequest, _block: Option<String>) -> RpcResult<Bytes>;
+
+    /// 2. NEW: Execution (Write state)
+    #[method(name = "eth_sendTransaction")]
+    fn send_transaction(&self, request: CallRequest) -> RpcResult<B256>;
 
     /// A custom "God Mode" method to set balance
     #[method(name = "tenderly_setBalance")]
@@ -60,6 +77,59 @@ impl EidolonApiServer for EidolonRpc {
                 Err(ErrorObject::owned(
                     -32000,
                     format!("Internal Error: {:?}", e),
+                    None::<()>,
+                ))
+            }
+        }
+    }
+
+    fn call(&self, request: CallRequest, _block: Option<String>) -> RpcResult<Bytes> {
+        let mut executor = self.executor.write();
+
+        // Default to zero address if 'from' is missing
+        let caller = request.from.unwrap_or(Address::ZERO);
+        let value = request.value.unwrap_or(U256::ZERO);
+        let data = request.data.unwrap_or_default();
+
+        info!("📞 eth_call: from={:?} to={:?}", caller, request.to);
+
+        match executor.call(caller, request.to, value, data) {
+            Ok(output) => Ok(output),
+            Err(e) => {
+                error!("❌ Call Failed: {:?}", e);
+                Err(ErrorObject::owned(
+                    -32000,
+                    format!("Revert: {:?}", e),
+                    None::<()>,
+                ))
+            }
+        }
+    }
+
+    fn send_transaction(&self, request: CallRequest) -> RpcResult<B256> {
+        let mut executor = self.executor.write();
+
+        // Default to zero address if 'from' is missing
+        let caller = request.from.unwrap_or(Address::ZERO);
+        let value = request.value.unwrap_or(U256::ZERO);
+        let data = request.data.unwrap_or_default();
+
+        info!(
+            "📝 eth_sendTransaction: from={:?} to={:?}",
+            caller, request.to
+        );
+
+        match executor.transact(caller, request.to, value, data) {
+            Ok(_) => {
+                // Return a fake transaction hash (since we don't really have a mempool)
+                use alloy_primitives::B256;
+                Ok(B256::from_slice(&[1u8; 32]))
+            }
+            Err(e) => {
+                error!("❌ Tx Failed: {:?}", e);
+                Err(ErrorObject::owned(
+                    -32000,
+                    format!("Tx Failed: {:?}", e),
                     None::<()>,
                 ))
             }
