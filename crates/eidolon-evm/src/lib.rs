@@ -53,6 +53,44 @@ impl Executor {
         Ok(result)
     }
 
+    pub fn call(
+        &mut self,
+        caller: Address,
+        to: Address,
+        value: U256,
+        data: Bytes,
+    ) -> Result<Bytes> {
+        // We use transact_ref() so we don't consume the DB
+        let mut evm = Evm::builder()
+            .with_db(&mut self.db)
+            .modify_tx_env(|tx| {
+                tx.caller = caller;
+                tx.transact_to = TransactTo::Call(to);
+                tx.value = value;
+                tx.data = data;
+                tx.gas_limit = 30_000_000; // Infinite gas for reading
+            })
+            .build();
+
+        let result_and_state = evm
+            .transact()
+            .map_err(|e| anyhow::anyhow!("EVM Execution Error: {:?}", e))?;
+
+        // Extract the raw bytes (e.g., the return value of a function)
+        match result_and_state.result {
+            ExecutionResult::Success { output, .. } => match output {
+                Output::Call(bytes) => Ok(bytes),
+                Output::Create(bytes, _) => Ok(bytes),
+            },
+            ExecutionResult::Revert { output, .. } => {
+                anyhow::bail!("Reverted: {:?}", output);
+            }
+            ExecutionResult::Halt { reason, .. } => {
+                anyhow::bail!("Halted: {:?}", reason);
+            }
+        }
+    }
+
     /// Helper to get balance
     pub fn get_balance(&mut self, address: Address) -> Result<U256> {
         let acc = self.db.basic(address)?.unwrap_or_default();

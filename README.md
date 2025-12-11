@@ -71,9 +71,9 @@ export UPSTREAM_RPC="[https://eth-mainnet.g.alchemy.com/v2/YOUR_KEY](https://eth
 Then, connect your Metamask or Hardhat config to: `http://localhost:3000/fork/{fork_id}`
 
 ## 🔮 Roadmap
-- [ ] Phase 1: The Skeleton: Basic revm loop with in-memory storage.
-- [ ] Phase 2: The Gateway: jsonrpsee server handling eth_call and eth_sendRawTransaction.
-- [ ] Phase 3: The ForkDB: Implementation of the "Lazy Loading" database trait.
+- [x] Phase 1: The Skeleton: Basic revm loop with in-memory storage.
+- [x] Phase 2: The Gateway: jsonrpsee server handling eth_call and eth_sendRawTransaction.
+- [x] Phase 3: The ForkDB: Implementation of the "Lazy Loading" database trait.
 - [ ] Phase 4: Persistence: Redis integration for saving session state.
 - [ ] Phase 5: Time Travel: Implementing eidolon_increaseTime.
 
