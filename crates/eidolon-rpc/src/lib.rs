@@ -40,6 +40,9 @@ pub trait EidolonApi {
     #[method(name = "debug_traceTransaction")]
     fn trace_transaction(&self, request: CallRequest) -> RpcResult<Vec<TraceStep>>;
 
+    #[method(name = "evm_increaseTime")]
+    fn increase_time(&self, seconds: U64) -> RpcResult<U64>;
+
     /// A custom "God Mode" method to set balance
     #[method(name = "tenderly_setBalance")]
     fn set_balance(&self, address: Address, amount: U256) -> RpcResult<bool>;
@@ -159,6 +162,15 @@ impl EidolonApiServer for EidolonRpc {
                 None::<()>,
             )),
         }
+    }
+
+    fn increase_time(&self, seconds: U64) -> RpcResult<U64> {
+        let mut executor = self.executor.write();
+        let secs = seconds.to::<u64>();
+        executor.increase_time(secs);
+        info!("⏰ Warping time forward by {} seconds", secs);
+        // Return the total added seconds (simplified)
+        Ok(seconds)
     }
 
     fn set_balance(&self, address: Address, amount: U256) -> RpcResult<bool> {

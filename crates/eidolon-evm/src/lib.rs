@@ -6,7 +6,7 @@ use eidolon_forkdb::{ForkDB, new_fork_db};
 use revm::{
     Database, Evm,
     db::{CacheDB, EmptyDB},
-    primitives::{AccountInfo, ExecutionResult, Output, TransactTo, TxEnv},
+    primitives::{AccountInfo, BlockEnv, ExecutionResult, Output, TransactTo, TxEnv},
 };
 use tracer::EidolonTracer;
 
@@ -14,13 +14,27 @@ use tracer::EidolonTracer;
 /// Wraps the EVM and the Database (State).
 pub struct Executor {
     pub db: ForkDB,
+    pub block_env: BlockEnv,
 }
 
 impl Executor {
     pub fn new(rpc_url: String) -> Self {
+        let mut block_env = BlockEnv::default();
+        block_env.timestamp = U256::from(
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
+        );
+
         Self {
             db: new_fork_db(rpc_url),
+            block_env,
         }
+    }
+
+    pub fn increase_time(&mut self, seconds: u64) {
+        self.block_env.timestamp += U256::from(seconds);
     }
 
     pub fn set_balance(&mut self, address: Address, amount: U256) {
