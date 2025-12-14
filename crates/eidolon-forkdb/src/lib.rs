@@ -1,12 +1,11 @@
 use alloy_primitives::{Address, B256, U64, U256};
 use anyhow::Result;
 use revm::{
-    Database, DatabaseRef,
-    db::{CacheDB, EmptyDB},
+    DatabaseRef,
+    db::CacheDB,
     primitives::{AccountInfo, Bytecode},
 };
-use serde::Deserialize;
-use std::collections::HashMap;
+
 use tracing::info;
 
 /// The configuration for the fork

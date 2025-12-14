@@ -1,7 +1,6 @@
-use alloy_primitives::{Address, Bytes, U256};
 use revm::{
     Database, EvmContext, Inspector,
-    interpreter::{CallInputs, CallOutcome, Interpreter, OpCode},
+    interpreter::{Interpreter, OpCode},
     primitives::Log,
 };
 use serde::Serialize;

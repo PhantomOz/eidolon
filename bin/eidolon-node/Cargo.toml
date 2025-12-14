@@ -13,3 +13,4 @@ tracing-subscriber = { workspace = true }
 jsonrpsee = { version = "0.24", features = ["server"] }
 tokio = { workspace = true }
 parking_lot = "0.12"
+clap = { version = "4.4", features = ["derive", "env"] }

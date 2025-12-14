@@ -22,6 +22,18 @@ pub struct CallRequest {
 /// These are the methods Metamask will try to call.
 #[rpc(server)]
 pub trait EidolonApi {
+    #[method(name = "net_version")]
+    fn net_version(&self) -> RpcResult<String>;
+
+    #[method(name = "eth_blockNumber")]
+    fn block_number(&self) -> RpcResult<U256>;
+
+    #[method(name = "eth_gasPrice")]
+    fn gas_price(&self) -> RpcResult<U256>;
+
+    #[method(name = "eth_estimateGas")]
+    fn estimate_gas(&self, request: CallRequest, _block: Option<String>) -> RpcResult<U256>;
+
     /// Returns the Chain ID
     #[method(name = "eth_chainId")]
     fn chain_id(&self) -> RpcResult<U64>; // Return type must be RpcResult<T>
@@ -54,19 +66,48 @@ pub struct EidolonRpc {
     // Arc = Atomic Reference Count (Shared ownership)
     // RwLock = Read/Write Lock (Safe mutability across threads)
     executor: Arc<RwLock<Executor>>,
+    chain_id: u64,
 }
 
 impl EidolonRpc {
-    pub fn new(executor: Arc<RwLock<Executor>>) -> Self {
-        Self { executor }
+    pub fn new(executor: Arc<RwLock<Executor>>, chain_id: u64) -> Self {
+        Self { executor, chain_id }
     }
 }
 
 #[async_trait]
 impl EidolonApiServer for EidolonRpc {
+    fn net_version(&self) -> RpcResult<String> {
+        Ok(self.chain_id.to_string())
+    }
+
+    fn block_number(&self) -> RpcResult<U256> {
+        // In a real SaaS, this would return the forked block number + mined blocks
+        // For now, we return a static high number to keep Metamask happy
+        Ok(U256::from(19_000_000))
+    }
+
+    fn gas_price(&self) -> RpcResult<U256> {
+        // Cheap gas for testing (1 wei)
+        Ok(U256::from(1))
+    }
+
+    fn estimate_gas(&self, request: CallRequest, _block: Option<String>) -> RpcResult<U256> {
+        // Run the call to see how much gas it actually uses
+        let mut executor = self.executor.write();
+        let caller = request.from.unwrap_or(Address::ZERO);
+        let to = request.to;
+        let value = request.value.unwrap_or(U256::ZERO);
+        let data = request.data.unwrap_or_default();
+
+        // We use the existing 'call' logic but ideally we'd get the specific gas used
+        // For Phase 1 SaaS, we return a flat value to ensure txs go through
+        Ok(U256::from(30_000_000))
+    }
+
     fn chain_id(&self) -> RpcResult<U64> {
         // Wrap success in Ok()
-        Ok(U64::from(31337))
+        Ok(U64::from(self.chain_id))
     }
 
     fn get_balance(&self, address: Address, _block: Option<String>) -> RpcResult<U256> {

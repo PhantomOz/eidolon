@@ -5,8 +5,7 @@ use anyhow::Result;
 use eidolon_forkdb::{ForkDB, new_fork_db};
 use revm::{
     Database, Evm,
-    db::{CacheDB, EmptyDB},
-    primitives::{AccountInfo, BlockEnv, ExecutionResult, Output, TransactTo, TxEnv},
+    primitives::{AccountInfo, BlockEnv, CfgEnv, ExecutionResult, Output, TransactTo},
 };
 use tracer::EidolonTracer;
 
@@ -15,10 +14,14 @@ use tracer::EidolonTracer;
 pub struct Executor {
     pub db: ForkDB,
     pub block_env: BlockEnv,
+    pub cfg_env: CfgEnv,
 }
 
 impl Executor {
-    pub fn new(rpc_url: String) -> Self {
+    pub fn new(rpc_url: String, chain_id: u64) -> Self {
+        let db = new_fork_db(rpc_url);
+
+        // Setup Block Time
         let mut block_env = BlockEnv::default();
         block_env.timestamp = U256::from(
             std::time::SystemTime::now()
@@ -27,9 +30,14 @@ impl Executor {
                 .as_secs(),
         );
 
+        // Setup Chain Config
+        let mut cfg_env = CfgEnv::default();
+        cfg_env.chain_id = chain_id; // Set the Chain ID dynamically
+
         Self {
-            db: new_fork_db(rpc_url),
+            db,
             block_env,
+            cfg_env,
         }
     }
 
