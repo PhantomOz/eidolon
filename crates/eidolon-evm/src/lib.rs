@@ -3,11 +3,32 @@ pub mod tracer;
 use alloy_primitives::{Address, Bytes, U256};
 use anyhow::Result;
 use eidolon_forkdb::{ForkDB, new_fork_db};
+use revm::primitives::AccountInfo;
 use revm::{
     Database, Evm,
-    primitives::{AccountInfo, BlockEnv, CfgEnv, ExecutionResult, Output, TransactTo},
+    db::{AccountState, DbAccount},
+    primitives::{BlockEnv, CfgEnv, ExecutionResult, Output, TransactTo},
 };
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use tracer::EidolonTracer;
+
+// --- Persistence Data Structures ---
+
+/// A simple struct to save to Redis.
+/// Holds everything needed to reconstruct an account.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct SerializableAccount {
+    pub info: AccountInfo,
+    pub storage: HashMap<U256, U256>,
+}
+
+/// The full snapshot of the fork.
+#[derive(Serialize, Deserialize, Debug)]
+pub struct StateSnapshot {
+    pub accounts: HashMap<Address, SerializableAccount>,
+    pub timestamp: U256,
+}
 
 /// The Eidolon Executor
 /// Wraps the EVM and the Database (State).
@@ -18,8 +39,8 @@ pub struct Executor {
 }
 
 impl Executor {
-    pub fn new(rpc_url: String, chain_id: u64) -> Self {
-        let db = new_fork_db(rpc_url);
+    pub fn new(rpc_url: String, chain_id: u64, block_number: Option<u64>) -> Self {
+        let db = new_fork_db(rpc_url, block_number);
 
         // Setup Block Time
         let mut block_env = BlockEnv::default();
@@ -150,6 +171,48 @@ impl Executor {
 
         // 4. Return the populated tracer
         Ok(tracer)
+    }
+
+    /// SAVE: Extract internal REVM state into our clean struct
+    pub fn get_snapshot(&mut self) -> StateSnapshot {
+        let mut serializable_accounts = HashMap::new();
+
+        // Iterate over the CacheDB's internal accounts
+        // 'db.accounts' maps Address -> DbAccount
+        for (addr, db_acc) in &self.db.accounts {
+            serializable_accounts.insert(
+                *addr,
+                SerializableAccount {
+                    info: db_acc.info.clone(),
+                    storage: db_acc.storage.clone().into_iter().collect(),
+                },
+            );
+        }
+
+        StateSnapshot {
+            accounts: serializable_accounts,
+            timestamp: self.block_env.timestamp,
+        }
+    }
+
+    /// LOAD: Reconstruct REVM state from our struct
+    pub fn load_snapshot(&mut self, snapshot: StateSnapshot) {
+        // 1. Restore Block Time
+        self.block_env.timestamp = snapshot.timestamp;
+
+        // 2. Restore Accounts
+        self.db.accounts.clear(); // Wipe existing memory
+
+        for (addr, saved_acc) in snapshot.accounts {
+            // Reconstruct the complicated DbAccount struct
+            let db_acc = DbAccount {
+                info: saved_acc.info,
+                storage: saved_acc.storage.clone().into_iter().collect(),
+                account_state: AccountState::Touched, // Mark as 'active' so it doesn't get deleted
+            };
+
+            self.db.accounts.insert(addr, db_acc);
+        }
     }
 
     /// Helper to get balance

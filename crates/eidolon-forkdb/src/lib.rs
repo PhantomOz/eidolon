@@ -61,12 +61,9 @@ impl DatabaseRef for RpcBackend {
     fn basic_ref(&self, address: Address) -> Result<Option<AccountInfo>, Self::Error> {
         info!("🌍 Fetching Account: {:?}", address);
 
-        // 1. Fetch Balance (U256 handles hex strings automatically)
         let bal_hex = self.call_rpc("eth_getBalance", serde_json::json!([address, "latest"]))?;
         let balance: U256 = serde_json::from_value(bal_hex)?;
 
-        // 2. Fetch Nonce
-        // FIX: Deserialize into U64 first (which handles "0x..."), then cast to u64
         let nonce_hex = self.call_rpc(
             "eth_getTransactionCount",
             serde_json::json!([address, "latest"]),
@@ -74,7 +71,6 @@ impl DatabaseRef for RpcBackend {
         let nonce_alloy: U64 = serde_json::from_value(nonce_hex)?;
         let nonce = nonce_alloy.to::<u64>(); // Safe cast
 
-        // 3. Fetch Code
         let code_hex = self.call_rpc("eth_getCode", serde_json::json!([address, "latest"]))?;
         let code_bytes: alloy_primitives::Bytes = serde_json::from_value(code_hex)?;
 
@@ -95,7 +91,7 @@ impl DatabaseRef for RpcBackend {
     }
 
     fn code_by_hash_ref(&self, _code_hash: B256) -> Result<Bytecode, Self::Error> {
-        // In a real implementation, you'd need to handle this.
+        // TODO: implementation, you'd need to handle this.
         // For basic_ref, we already fetched the code, so REVM usually handles this.
         Ok(Bytecode::new())
     }
@@ -112,18 +108,18 @@ impl DatabaseRef for RpcBackend {
         Ok(val)
     }
 
-    fn block_hash_ref(&self, number: u64) -> Result<B256, Self::Error> {
-        Ok(B256::ZERO) // Simplified for now
+    fn block_hash_ref(&self, _: u64) -> Result<B256, Self::Error> {
+        Ok(B256::ZERO) // TODO: Simplified for now
     }
 }
 
 /// We wrap our RpcBackend in a CacheDB so we write to memory but read from RPC.
 pub type ForkDB = CacheDB<RpcBackend>;
 
-pub fn new_fork_db(rpc_url: String) -> ForkDB {
+pub fn new_fork_db(rpc_url: String, block_number: Option<u64>) -> ForkDB {
     let backend = RpcBackend::new(ForkConfig {
         rpc_url,
-        block_number: None,
+        block_number,
     });
     CacheDB::new(backend)
 }
