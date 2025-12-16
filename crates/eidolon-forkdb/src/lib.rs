@@ -123,3 +123,27 @@ pub fn new_fork_db(rpc_url: String, block_number: Option<u64>) -> ForkDB {
     });
     CacheDB::new(backend)
 }
+
+pub fn fetch_latest_block_number(rpc_url: &str) -> Result<u64, anyhow::Error> {
+    let agent = ureq::Agent::new();
+    let body = serde_json::json!({
+        "jsonrpc": "2.0",
+        "method": "eth_blockNumber",
+        "params": [],
+        "id": 1
+    });
+
+    let response: serde_json::Value = agent.post(rpc_url).send_json(body)?.into_json()?;
+
+    if let Some(err) = response.get("error") {
+        anyhow::bail!("RPC Error: {:?}", err);
+    }
+
+    let hex_val = response["result"]
+        .as_str()
+        .ok_or(anyhow::anyhow!("Invalid response"))?;
+    // Parse Hex to u64
+    let num = u64::from_str_radix(hex_val.trim_start_matches("0x"), 16)?;
+
+    Ok(num)
+}

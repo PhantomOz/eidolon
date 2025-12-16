@@ -2,7 +2,7 @@ pub mod tracer;
 
 use alloy_primitives::{Address, Bytes, U256};
 use anyhow::Result;
-use eidolon_forkdb::{ForkDB, new_fork_db};
+use eidolon_forkdb::{ForkDB, fetch_latest_block_number, new_fork_db};
 use revm::primitives::AccountInfo;
 use revm::{
     Database, Evm,
@@ -12,6 +12,7 @@ use revm::{
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tracer::EidolonTracer;
+use tracing::{info, warn};
 
 // --- Persistence Data Structures ---
 
@@ -40,10 +41,11 @@ pub struct Executor {
 
 impl Executor {
     pub fn new(rpc_url: String, chain_id: u64, block_number: Option<u64>) -> Self {
-        let db = new_fork_db(rpc_url, block_number);
+        let db = new_fork_db(rpc_url.clone(), block_number);
 
-        // Setup Block Time
         let mut block_env = BlockEnv::default();
+
+        // 1. Set Timestamp (System Time)
         block_env.timestamp = U256::from(
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -51,9 +53,26 @@ impl Executor {
                 .as_secs(),
         );
 
-        // Setup Chain Config
+        // 2. Set Block Number (Dynamic!)
+        let target_block = if let Some(b) = block_number {
+            b // User pinned a block
+        } else {
+            // User wants latest, so let's fetch it
+            match fetch_latest_block_number(&rpc_url) {
+                Ok(n) => {
+                    info!("🔗 Synced to latest block: {}", n);
+                    n
+                }
+                Err(e) => {
+                    warn!("⚠️ Failed to fetch block number: {:?}. Defaulting to 0.", e);
+                    0
+                }
+            }
+        };
+        block_env.number = U256::from(target_block);
+
         let mut cfg_env = CfgEnv::default();
-        cfg_env.chain_id = chain_id; // Set the Chain ID dynamically
+        cfg_env.chain_id = chain_id;
 
         Self {
             db,
