@@ -49,7 +49,7 @@ impl Executor {
         block_env.timestamp = U256::from(
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
+                .unwrap_or_default()
                 .as_secs(),
         );
 
@@ -91,19 +91,40 @@ impl Executor {
         self.db.insert_account_info(address, account);
     }
 
+    pub fn get_nonce(&mut self, address: Address) -> Result<u64> {
+        // This triggers the ForkDB fetch if not in memory
+        let acc = self.db.basic(address)?.unwrap_or_default();
+        Ok(acc.nonce)
+    }
+
+    // NEW: Helper to get Code
+    pub fn get_code(&mut self, address: Address) -> Result<Bytes> {
+        let acc = self.db.basic(address)?.unwrap_or_default();
+        // Extract bytecode if it exists, otherwise empty
+        match acc.code {
+            Some(code) => Ok(code.original_bytes()),
+            None => Ok(Bytes::default()),
+        }
+    }
+
     /// Execute a transaction
     pub fn transact(
         &mut self,
         caller: Address,
-        to: Address,
+        to: Option<Address>,
         value: U256,
         data: Bytes,
     ) -> Result<ExecutionResult> {
+        let transact_to = match to {
+            Some(addr) => TransactTo::Call(addr),
+            None => TransactTo::Create,
+        };
+
         let mut evm = Evm::builder()
             .with_db(&mut self.db)
             .modify_tx_env(|tx| {
                 tx.caller = caller;
-                tx.transact_to = TransactTo::Call(to);
+                tx.transact_to = transact_to;
                 tx.value = value;
                 tx.data = data;
                 tx.gas_limit = 30_000_000;
@@ -118,25 +139,69 @@ impl Executor {
         Ok(result)
     }
 
+    /// Estimate the gas used by a transaction
+    pub fn estimate_gas(
+        &mut self,
+        caller: Address,
+        to: Option<Address>,
+        value: U256,
+        data: Bytes,
+    ) -> Result<u64> {
+        let transact_to = match to {
+            Some(addr) => TransactTo::Call(addr),
+            None => TransactTo::Create,
+        };
+
+        // We use transact_ref() or similar to not persist changes
+        let mut evm = Evm::builder()
+            .with_db(&mut self.db)
+            .modify_tx_env(|tx| {
+                tx.caller = caller;
+                tx.transact_to = transact_to;
+                tx.value = value;
+                tx.data = data;
+                tx.gas_limit = 30_000_000; // Large limit for estimation
+            })
+            .build();
+
+        let result_and_state = evm
+            .transact()
+            .map_err(|e| anyhow::anyhow!("EVM Execution Error: {:?}", e))?;
+
+        match result_and_state.result {
+            ExecutionResult::Success { gas_used, .. } => Ok(gas_used),
+            ExecutionResult::Revert { output, .. } => {
+                anyhow::bail!("Reverted during estimation: {:?}", output);
+            }
+            ExecutionResult::Halt { reason, .. } => {
+                anyhow::bail!("Halted during estimation: {:?}", reason);
+            }
+        }
+    }
+
     pub fn call(
         &mut self,
         caller: Address,
-        to: Address,
+        to: Option<Address>,
         value: U256,
         data: Bytes,
     ) -> Result<Bytes> {
+        let transact_to = match to {
+            Some(addr) => TransactTo::Call(addr),
+            None => TransactTo::Create,
+        };
+
         // We use transact_ref() so we don't consume the DB
         let mut evm = Evm::builder()
             .with_db(&mut self.db)
             .modify_tx_env(|tx| {
                 tx.caller = caller;
-                tx.transact_to = TransactTo::Call(to);
+                tx.transact_to = transact_to;
                 tx.value = value;
                 tx.data = data;
                 tx.gas_limit = 30_000_000; // Infinite gas for reading
             })
             .build();
-
         let result_and_state = evm
             .transact()
             .map_err(|e| anyhow::anyhow!("EVM Execution Error: {:?}", e))?;
@@ -159,10 +224,15 @@ impl Executor {
     pub fn trace_transaction(
         &mut self,
         caller: Address,
-        to: Address,
+        to: Option<Address>,
         value: U256,
         data: Bytes,
     ) -> Result<EidolonTracer> {
+        let transact_to = match to {
+            Some(addr) => TransactTo::Call(addr),
+            None => TransactTo::Create,
+        };
+
         // 1. Initialize Tracer
         let mut tracer = EidolonTracer::default();
 
@@ -173,7 +243,7 @@ impl Executor {
                 .with_external_context(&mut tracer) // Pass tracer here
                 .modify_tx_env(|tx| {
                     tx.caller = caller;
-                    tx.transact_to = TransactTo::Call(to);
+                    tx.transact_to = transact_to;
                     tx.value = value;
                     tx.data = data;
                     tx.gas_limit = 30_000_000;

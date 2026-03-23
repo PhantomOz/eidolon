@@ -1,19 +1,13 @@
 use alloy_primitives::{Address, B256, U64, U256};
 use anyhow::Result;
+use eidolon_types::ForkConfig;
 use revm::{
     DatabaseRef,
     db::CacheDB,
     primitives::{AccountInfo, Bytecode},
 };
 
-use tracing::info;
-
-/// The configuration for the fork
-#[derive(Clone)]
-pub struct ForkConfig {
-    pub rpc_url: String,
-    pub block_number: Option<u64>,
-}
+use tracing::{info, warn};
 
 /// The Backend that fetches data from RPC
 pub struct RpcBackend {
@@ -90,9 +84,11 @@ impl DatabaseRef for RpcBackend {
         Ok(Some(info))
     }
 
-    fn code_by_hash_ref(&self, _code_hash: B256) -> Result<Bytecode, Self::Error> {
-        // TODO: implementation, you'd need to handle this.
-        // For basic_ref, we already fetched the code, so REVM usually handles this.
+    fn code_by_hash_ref(&self, code_hash: B256) -> Result<Bytecode, Self::Error> {
+        // REVM typically calls basic_ref first, which populates the cache.
+        // If we reach here, it means the code is missing from cache or we are in a weird state.
+        // Since we can't fetch code by hash from standard RPC, we return empty.
+        warn!("⚠️ code_by_hash_ref called for {:?}. Returning empty bytecode.", code_hash);
         Ok(Bytecode::new())
     }
 
@@ -108,8 +104,20 @@ impl DatabaseRef for RpcBackend {
         Ok(val)
     }
 
-    fn block_hash_ref(&self, _: u64) -> Result<B256, Self::Error> {
-        Ok(B256::ZERO) // TODO: Simplified for now
+    fn block_hash_ref(&self, number: u64) -> Result<B256, Self::Error> {
+        info!("🌍 Fetching Block Hash: {}", number);
+        let block_hex = self.call_rpc(
+            "eth_getBlockByNumber",
+            serde_json::json!([format!("0x{:x}", number), false]),
+        )?;
+
+        if block_hex.is_null() {
+             return Ok(B256::ZERO);
+        }
+
+        let hash_val = block_hex.get("hash").and_then(|v| v.as_str()).unwrap_or_default();
+        let hash: B256 = hash_val.parse().unwrap_or(B256::ZERO);
+        Ok(hash)
     }
 }
 
