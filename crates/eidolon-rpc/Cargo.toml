@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 eidolon-evm = { path = "../eidolon-evm" }
+revm = { workspace = true }
 alloy-primitives = { workspace = true }
 jsonrpsee = { version = "0.24", features = ["server", "macros"] }
 tokio = { workspace = true }

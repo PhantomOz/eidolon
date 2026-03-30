@@ -25,10 +25,12 @@ pub struct SerializableAccount {
 }
 
 /// The full snapshot of the fork.
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct StateSnapshot {
     pub accounts: HashMap<Address, SerializableAccount>,
     pub timestamp: U256,
+    pub block_number: U256,
+    pub chain_id: u64,
 }
 
 /// The Eidolon Executor
@@ -37,6 +39,9 @@ pub struct Executor {
     pub db: ForkDB,
     pub block_env: BlockEnv,
     pub cfg_env: CfgEnv,
+    // Snapshots
+    pub snapshots: HashMap<u64, StateSnapshot>,
+    pub snapshot_id_counter: u64,
 }
 
 impl Executor {
@@ -78,6 +83,8 @@ impl Executor {
             db,
             block_env,
             cfg_env,
+            snapshots: HashMap::new(),
+            snapshot_id_counter: 0,
         }
     }
 
@@ -85,10 +92,68 @@ impl Executor {
         self.block_env.timestamp += U256::from(seconds);
     }
 
+    pub fn set_block_timestamp(&mut self, timestamp: u64) {
+        self.block_env.timestamp = U256::from(timestamp);
+    }
+
+    pub fn set_block_number(&mut self, number: u64) {
+        self.block_env.number = U256::from(number);
+    }
+
     pub fn set_balance(&mut self, address: Address, amount: U256) {
         let mut account = AccountInfo::default();
+        // Preserve existing code/nonce if possible, but for setBalance often we just want to set balance.
+        // If we want to be safe, we should check if account exists first.
+        if let Ok(Some(existing)) = self.db.basic(address) {
+             account = existing;
+        }
         account.balance = amount;
         self.db.insert_account_info(address, account);
+    }
+
+    pub fn set_code(&mut self, address: Address, code: Bytes) {
+        let mut account = AccountInfo::default();
+        if let Ok(Some(existing)) = self.db.basic(address) {
+             account = existing;
+        }
+        let bytecode = revm::primitives::Bytecode::new_raw(code);
+        account.code_hash = bytecode.hash_slow();
+        account.code = Some(bytecode);
+        self.db.insert_account_info(address, account);
+    }
+
+    pub fn set_storage_at(&mut self, address: Address, slot: U256, value: U256) -> Result<()> {
+        // Ensure account exists in the cache, or create a default one
+        if self.db.basic(address)?.is_none() {
+            self.db.insert_account_info(address, AccountInfo::default());
+        }
+
+        // We need to insert storage. ForkDB (CacheDB) handles this.
+        self.db.insert_account_storage(address, slot, value)?;
+        Ok(())
+    }
+
+    pub fn take_snapshot(&mut self) -> u64 {
+        let id = self.snapshot_id_counter;
+        self.snapshot_id_counter += 1;
+        let snapshot = self.get_snapshot();
+        self.snapshots.insert(id, snapshot);
+        id
+    }
+
+    pub fn revert_snapshot(&mut self, id: u64) -> bool {
+        if let Some(snapshot) = self.snapshots.get(&id) {
+            // Deep clone needed because we are restoring it but want to keep the snapshot valid?
+            // Usually revert keeps the snapshot or deletes it?
+            // Anvil keeps it. Hardhat keeps it.
+            // Let's clone it.
+            self.load_snapshot(snapshot.clone());
+            // We usually invalidate all snapshots taken AFTER this one.
+            self.snapshots.retain(|k, _| *k <= id);
+            true
+        } else {
+            false
+        }
     }
 
     pub fn get_nonce(&mut self, address: Address) -> Result<u64> {
@@ -120,6 +185,9 @@ impl Executor {
             None => TransactTo::Create,
         };
 
+        // Look up the caller's current nonce so REVM's nonce check passes
+        let nonce = self.get_nonce(caller)?;
+
         let mut evm = Evm::builder()
             .with_db(&mut self.db)
             .modify_tx_env(|tx| {
@@ -129,6 +197,7 @@ impl Executor {
                 tx.data = data;
                 tx.gas_limit = 30_000_000;
                 tx.gas_price = U256::from(1);
+                tx.nonce = Some(nonce);
             })
             .build();
 
@@ -281,13 +350,17 @@ impl Executor {
         StateSnapshot {
             accounts: serializable_accounts,
             timestamp: self.block_env.timestamp,
+            block_number: self.block_env.number,
+            chain_id: self.cfg_env.chain_id,
         }
     }
 
     /// LOAD: Reconstruct REVM state from our struct
     pub fn load_snapshot(&mut self, snapshot: StateSnapshot) {
-        // 1. Restore Block Time
+        // 1. Restore Block Environment
         self.block_env.timestamp = snapshot.timestamp;
+        self.block_env.number = snapshot.block_number;
+        self.cfg_env.chain_id = snapshot.chain_id;
 
         // 2. Restore Accounts
         self.db.accounts.clear(); // Wipe existing memory
@@ -308,6 +381,12 @@ impl Executor {
     pub fn get_balance(&mut self, address: Address) -> Result<U256> {
         let acc = self.db.basic(address)?.unwrap_or_default();
         Ok(acc.balance)
+    }
+
+    /// Helper to get storage at a specific slot
+    pub fn get_storage_at(&mut self, address: Address, slot: U256) -> Result<U256> {
+        let val = self.db.storage(address, slot)?;
+        Ok(val)
     }
 }
 

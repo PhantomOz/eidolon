@@ -935,6 +935,7 @@ dependencies = [
  "eidolon-types",
  "jsonrpsee",
  "parking_lot",
+ "revm",
  "serde",
  "serde_json",
  "tokio",

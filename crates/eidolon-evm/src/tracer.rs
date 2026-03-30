@@ -4,6 +4,7 @@ use revm::{
     primitives::Log,
 };
 use serde::Serialize;
+use tracing::debug;
 
 /// A single step in the execution trace
 #[derive(Clone, Debug, Serialize)]
@@ -50,6 +51,6 @@ impl<DB: Database> Inspector<DB> for EidolonTracer {
 
     // You can also hook into log, call, create, selfdestruct...
     fn log(&mut self, _interp: &mut Interpreter, _context: &mut EvmContext<DB>, log: &Log) {
-        println!("📝 LOG EMITTED: {:?}", log.topics());
+        debug!("LOG EMITTED: {:?}", log.topics());
     }
 }

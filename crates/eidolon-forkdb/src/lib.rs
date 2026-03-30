@@ -23,6 +23,15 @@ impl RpcBackend {
         }
     }
 
+    /// Returns the block tag to use in RPC calls.
+    /// If a block number is pinned, returns its hex representation; otherwise returns "latest".
+    fn block_tag(&self) -> String {
+        match self.config.block_number {
+            Some(n) => format!("0x{:x}", n),
+            None => "latest".to_string(),
+        }
+    }
+
     /// Helper to make JSON-RPC calls
     fn call_rpc(&self, method: &str, params: serde_json::Value) -> Result<serde_json::Value> {
         let body = serde_json::json!({
@@ -55,17 +64,19 @@ impl DatabaseRef for RpcBackend {
     fn basic_ref(&self, address: Address) -> Result<Option<AccountInfo>, Self::Error> {
         info!("🌍 Fetching Account: {:?}", address);
 
-        let bal_hex = self.call_rpc("eth_getBalance", serde_json::json!([address, "latest"]))?;
+        let tag = self.block_tag();
+
+        let bal_hex = self.call_rpc("eth_getBalance", serde_json::json!([address, &tag]))?;
         let balance: U256 = serde_json::from_value(bal_hex)?;
 
         let nonce_hex = self.call_rpc(
             "eth_getTransactionCount",
-            serde_json::json!([address, "latest"]),
+            serde_json::json!([address, &tag]),
         )?;
         let nonce_alloy: U64 = serde_json::from_value(nonce_hex)?;
         let nonce = nonce_alloy.to::<u64>(); // Safe cast
 
-        let code_hex = self.call_rpc("eth_getCode", serde_json::json!([address, "latest"]))?;
+        let code_hex = self.call_rpc("eth_getCode", serde_json::json!([address, &tag]))?;
         let code_bytes: alloy_primitives::Bytes = serde_json::from_value(code_hex)?;
 
         let bytecode = if code_bytes.is_empty() {
@@ -97,7 +108,7 @@ impl DatabaseRef for RpcBackend {
 
         let val_hex = self.call_rpc(
             "eth_getStorageAt",
-            serde_json::json!([address, index, "latest"]),
+            serde_json::json!([address, index, self.block_tag()]),
         )?;
         let val: U256 = serde_json::from_value(val_hex)?;
 
