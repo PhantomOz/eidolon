@@ -1,0 +1,149 @@
+services:
+  # ------------------------------------------------------------------
+  # 1. The Persistence Layer (Shared Database)
+  # ------------------------------------------------------------------
+  redis:
+    image: redis:alpine
+    command: redis-server --requirepass eidolon_secret
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - eidolon-net
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+  # ------------------------------------------------------------------
+  # 2. Virtual Testnet: Ethereum Mainnet (Layer 1)
+  # ------------------------------------------------------------------
+  node-mainnet:
+    build: .
+    container_name: eidolon-mainnet
+    ports:
+      - "3001:8545"
+    environment:
+      - RPC_URL=https://eth.llamarpc.com
+      - CHAIN_ID=1
+      - PORT=8545
+      - FORK_ID=session-mainnet-001
+      - REDIS_URL=redis://default:eidolon_secret@redis:6379/
+    depends_on:
+      redis:
+        condition: service_started
+    networks:
+      - eidolon-net
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+
+  # ------------------------------------------------------------------
+  # 3. Virtual Testnet: Polygon (Sidechain)
+  # ------------------------------------------------------------------
+  node-polygon:
+    build: .
+    container_name: eidolon-polygon
+    ports:
+      - "3002:8545"
+    environment:
+      - RPC_URL=https://polygon-rpc.com
+      - CHAIN_ID=137
+      - PORT=8545
+      - FORK_ID=session-polygon-001
+      - REDIS_URL=redis://default:eidolon_secret@redis:6379/
+    depends_on:
+      redis:
+        condition: service_started
+    networks:
+      - eidolon-net
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+
+  # ------------------------------------------------------------------
+  # 4. Virtual Testnet: Optimism (Layer 2)
+  # ------------------------------------------------------------------
+  node-optimism:
+    build: .
+    container_name: eidolon-optimism
+    ports:
+      - "3003:8545"
+    environment:
+      - RPC_URL=https://mainnet.optimism.io
+      - CHAIN_ID=10
+      - PORT=8545
+      - FORK_ID=session-optimism-001
+      - REDIS_URL=redis://default:eidolon_secret@redis:6379/
+    depends_on:
+      redis:
+        condition: service_started
+    networks:
+      - eidolon-net
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+
+  # ------------------------------------------------------------------
+  # 5. Virtual Testnet: Arbitrum One (Layer 2)
+  # ------------------------------------------------------------------
+  node-arbitrum:
+    build: .
+    container_name: eidolon-arbitrum
+    ports:
+      - "3004:8545"
+    environment:
+      - RPC_URL=https://arb1.arbitrum.io/rpc
+      - CHAIN_ID=42161
+      - PORT=8545
+      - FORK_ID=session-arbitrum-001
+      - REDIS_URL=redis://default:eidolon_secret@redis:6379/
+    depends_on:
+      redis:
+        condition: service_started
+    networks:
+      - eidolon-net
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+
+  # ------------------------------------------------------------------
+  # 6. Virtual Testnet: Base (Layer 2)
+  # ------------------------------------------------------------------
+  node-base:
+    build: .
+    container_name: eidolon-base
+    ports:
+      - "3005:8545"
+    environment:
+      - RPC_URL=https://mainnet.base.org
+      - CHAIN_ID=8453
+      - PORT=8545
+      - FORK_ID=session-base-001
+      - REDIS_URL=redis://default:eidolon_secret@redis:6379/
+    depends_on:
+      redis:
+        condition: service_started
+    networks:
+      - eidolon-net
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+
+volumes:
+  redis_data:
+
+networks:
+  eidolon-net:

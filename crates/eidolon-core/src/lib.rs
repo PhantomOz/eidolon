@@ -70,6 +70,8 @@ impl EidolonNode {
             .route("/api/keys", post(api::create_key))
             .route("/api/keys", get(api::list_keys))
             .route("/api/keys/{key}", delete(api::delete_key_handler))
+            // Usage Metering
+            .route("/api/usage", get(api::usage_stats))
             // Fork Management REST API
             .route("/api/forks", post(api::create_fork))
             .route("/api/forks", get(api::list_forks))
@@ -83,17 +85,47 @@ impl EidolonNode {
                 auth::auth_middleware(headers, state, request, next)
             }))
             .layer(cors)
-            .with_state(state);
+            .with_state(state.clone());
 
         let addr = SocketAddr::from(([0, 0, 0, 0], config.port));
         info!("🚀 Server running at http://{}", addr);
         info!("📡 REST API: http://{}/api/forks", addr);
+        info!("📊 Usage: http://{}/api/usage", addr);
 
         if let Some(ref _rpc_url) = config.rpc_url {
             info!(
                 "🔗 Default fork RPC: http://{}/rpc/{}",
                 addr, config.fork_id
             );
+        }
+
+        // Start periodic Redis save background task
+        if config.redis_url.is_some() {
+            let save_state = state.clone();
+            tokio::spawn(async move {
+                let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(60));
+                loop {
+                    interval.tick().await;
+                    let forks = save_state.fork_manager.list_forks("");
+                    if !forks.is_empty() {
+                        info!("💾 Periodic save: {} forks", forks.len());
+                        // Save each fork's state to Redis
+                        if let Some(ref redis_url) = save_state.fork_manager.redis_url {
+                            match redis::Client::open(redis_url.as_str()) {
+                                Ok(client) => {
+                                    if let Ok(mut conn) = client.get_connection() {
+                                        save_state.fork_manager.save_all_forks(&mut conn);
+                                    }
+                                }
+                                Err(e) => {
+                                    tracing::warn!("⚠️ Redis connection failed: {}", e);
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+            info!("💾 Periodic Redis save: every 60s");
         }
 
         let listener = tokio::net::TcpListener::bind(addr).await?;
@@ -109,3 +141,4 @@ impl EidolonNode {
         Ok(())
     }
 }
+

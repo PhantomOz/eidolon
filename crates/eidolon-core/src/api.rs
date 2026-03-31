@@ -60,6 +60,30 @@ pub async fn delete_key_handler(
     }
 }
 
+// --- Usage Metering ---
+
+/// GET /api/usage — Usage stats per API key.
+pub async fn usage_stats(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+    let keys = state.auth.list_keys();
+    let usage: Vec<serde_json::Value> = keys
+        .iter()
+        .map(|k| {
+            json!({
+                "key": format!("{}...{}", &k.key[..8], &k.key[k.key.len()-4..]),
+                "name": k.name,
+                "request_count": k.request_count,
+                "rate_limit": k.rate_limit,
+            })
+        })
+        .collect();
+    let total: u64 = keys.iter().map(|k| k.request_count).sum();
+    Json(json!({
+        "total_requests": total,
+        "active_forks": state.fork_manager.fork_count(),
+        "keys": usage,
+    }))
+}
+
 // --- Fork Management REST API ---
 
 /// POST /api/forks — Create a new fork.

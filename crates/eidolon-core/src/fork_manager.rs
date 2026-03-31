@@ -121,4 +121,25 @@ impl ForkManager {
     pub fn fork_count(&self) -> usize {
         self.forks.read().len()
     }
+
+    /// Save all fork states to Redis.
+    pub fn save_all_forks(&self, conn: &mut redis::Connection) {
+        use redis::Commands;
+
+        let forks = self.forks.read();
+        for (id, fork) in forks.iter() {
+            let mut executor = fork.executor.write();
+            let snapshot = executor.get_snapshot();
+            match serde_json::to_string(&snapshot) {
+                Ok(json) => {
+                    let key = format!("eidolon:fork:{}", id);
+                    let _: Result<(), _> = conn.set_ex(&key, &json, 86400); // 24h TTL
+                    tracing::debug!("💾 Saved fork {} ({} bytes)", id, json.len());
+                }
+                Err(e) => {
+                    tracing::warn!("⚠️ Failed to serialize fork {}: {}", id, e);
+                }
+            }
+        }
+    }
 }
