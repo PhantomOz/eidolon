@@ -4,10 +4,11 @@ use tracing::Level;
 use tracing_subscriber::FmtSubscriber;
 
 #[derive(Parser, Debug)]
-#[command(author, version, about)]
+#[command(author, version, about = "Eidolon — Virtual Testnet Engine")]
 struct Args {
+    /// Upstream RPC URL to fork from. If omitted, starts in SaaS mode (create forks via API).
     #[arg(long, env = "RPC_URL")]
-    rpc_url: String,
+    rpc_url: Option<String>,
 
     #[arg(short, long, env = "PORT", default_value_t = 8545)]
     port: u16,
@@ -47,3 +48,4 @@ async fn main() -> anyhow::Result<()> {
 
     Ok(())
 }
+

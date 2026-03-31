@@ -1,0 +1,163 @@
+use crate::fork_manager::{ForkCreateRequest, ForkManager};
+use axum::{
+    Json,
+    extract::{Path, State},
+    http::StatusCode,
+    response::IntoResponse,
+};
+use serde_json::json;
+use std::sync::Arc;
+
+/// Shared application state.
+pub struct AppState {
+    pub fork_manager: ForkManager,
+    pub base_url: String,
+}
+
+/// Custom RPC params wrapper for jsonrpsee's RpcModule::call.
+pub struct RawParams(pub Option<Box<serde_json::value::RawValue>>);
+
+impl jsonrpsee::core::traits::ToRpcParams for RawParams {
+    fn to_rpc_params(self) -> Result<Option<Box<serde_json::value::RawValue>>, serde_json::Error> {
+        Ok(self.0)
+    }
+}
+
+// --- Health ---
+
+pub async fn health() -> impl IntoResponse {
+    Json(json!({ "status": "ok", "version": "0.1.0" }))
+}
+
+// --- Fork Management REST API ---
+
+/// POST /api/forks — Create a new fork.
+pub async fn create_fork(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<ForkCreateRequest>,
+) -> impl IntoResponse {
+    let fork = state.fork_manager.create_fork(req);
+    let info = fork.info(&state.base_url);
+    (StatusCode::CREATED, Json(json!(info)))
+}
+
+/// GET /api/forks — List all forks.
+pub async fn list_forks(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+    let forks = state.fork_manager.list_forks(&state.base_url);
+    Json(json!({ "forks": forks, "count": forks.len() }))
+}
+
+/// GET /api/forks/:id — Get fork details.
+pub async fn get_fork(
+    State(state): State<Arc<AppState>>,
+    Path(fork_id): Path<String>,
+) -> impl IntoResponse {
+    match state.fork_manager.get_fork(&fork_id) {
+        Some(fork) => {
+            let info = fork.info(&state.base_url);
+            (StatusCode::OK, Json(json!(info))).into_response()
+        }
+        None => (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "Fork not found" })),
+        )
+            .into_response(),
+    }
+}
+
+/// DELETE /api/forks/:id — Delete a fork.
+pub async fn delete_fork(
+    State(state): State<Arc<AppState>>,
+    Path(fork_id): Path<String>,
+) -> impl IntoResponse {
+    if state.fork_manager.delete_fork(&fork_id) {
+        (StatusCode::OK, Json(json!({ "deleted": true }))).into_response()
+    } else {
+        (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "Fork not found" })),
+        )
+            .into_response()
+    }
+}
+
+// --- JSON-RPC Router ---
+
+/// POST /rpc/:fork_id — Route JSON-RPC requests to the correct fork.
+pub async fn handle_rpc(
+    State(state): State<Arc<AppState>>,
+    Path(fork_id): Path<String>,
+    body: String,
+) -> impl IntoResponse {
+    // 1. Look up fork
+    let fork = match state.fork_manager.get_fork(&fork_id) {
+        Some(f) => f,
+        None => {
+            let error_response = json!({
+                "jsonrpc": "2.0",
+                "error": { "code": -32001, "message": format!("Fork '{}' not found", fork_id) },
+                "id": null
+            });
+            return (StatusCode::NOT_FOUND, Json(error_response)).into_response();
+        }
+    };
+
+    // 2. Parse JSON-RPC request
+    let request: serde_json::Value = match serde_json::from_str(&body) {
+        Ok(v) => v,
+        Err(_) => {
+            let error_response = json!({
+                "jsonrpc": "2.0",
+                "error": { "code": -32700, "message": "Parse error" },
+                "id": null
+            });
+            return (StatusCode::BAD_REQUEST, Json(error_response)).into_response();
+        }
+    };
+
+    let method = match request.get("method").and_then(|m| m.as_str()) {
+        Some(m) => m.to_string(),
+        None => {
+            let id = request.get("id").cloned().unwrap_or(serde_json::Value::Null);
+            let error_response = json!({
+                "jsonrpc": "2.0",
+                "error": { "code": -32600, "message": "Missing method" },
+                "id": id
+            });
+            return (StatusCode::BAD_REQUEST, Json(error_response)).into_response();
+        }
+    };
+
+    let id = request
+        .get("id")
+        .cloned()
+        .unwrap_or(serde_json::Value::Null);
+
+    // 3. Extract params as RawValue for RpcModule::call
+    let raw_params = request
+        .get("params")
+        .map(|p| serde_json::value::to_raw_value(p).unwrap());
+
+    // 4. Dispatch via RpcModule::call
+    let rpc_module = &fork.rpc_module;
+    let params = RawParams(raw_params);
+
+    match rpc_module.call::<RawParams, serde_json::Value>(&method, params).await {
+        Ok(result) => {
+            let response = json!({
+                "jsonrpc": "2.0",
+                "result": result,
+                "id": id
+            });
+            (StatusCode::OK, Json(response)).into_response()
+        }
+        Err(e) => {
+            let error_response = json!({
+                "jsonrpc": "2.0",
+                "error": { "code": -32000, "message": e.to_string() },
+                "id": id
+            });
+            (StatusCode::OK, Json(error_response)).into_response()
+        }
+    }
+}
