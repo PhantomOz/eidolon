@@ -24,6 +24,10 @@ struct Args {
 
     #[arg(long, env = "REDIS_URL")]
     redis_url: Option<String>,
+
+    /// Enable API key authentication. When enabled, all requests require X-API-Key header.
+    #[arg(long, env = "AUTH_ENABLED", default_value_t = false)]
+    auth: bool,
 }
 
 #[tokio::main]
@@ -42,6 +46,7 @@ async fn main() -> anyhow::Result<()> {
         block_number: args.block_number,
         fork_id: args.fork_id,
         redis_url: args.redis_url,
+        auth_enabled: args.auth,
     };
 
     EidolonNode::run(config).await?;

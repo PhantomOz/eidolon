@@ -1,3 +1,4 @@
+use crate::auth::{AuthManager, CreateKeyRequest};
 use crate::fork_manager::{ForkCreateRequest, ForkManager};
 use axum::{
     Json,
@@ -11,6 +12,7 @@ use std::sync::Arc;
 /// Shared application state.
 pub struct AppState {
     pub fork_manager: ForkManager,
+    pub auth: AuthManager,
     pub base_url: String,
 }
 
@@ -26,7 +28,36 @@ impl jsonrpsee::core::traits::ToRpcParams for RawParams {
 // --- Health ---
 
 pub async fn health() -> impl IntoResponse {
-    Json(json!({ "status": "ok", "version": "0.1.0" }))
+    Json(json!({ "status": "ok", "version": "0.2.0" }))
+}
+
+// --- API Key Management ---
+
+/// POST /api/keys — Create a new API key.
+pub async fn create_key(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<CreateKeyRequest>,
+) -> impl IntoResponse {
+    let key = state.auth.create_key(req.name, req.rate_limit);
+    (StatusCode::CREATED, Json(json!(key)))
+}
+
+/// GET /api/keys — List all API keys.
+pub async fn list_keys(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+    let keys = state.auth.list_keys();
+    Json(json!({ "keys": keys, "count": keys.len() }))
+}
+
+/// DELETE /api/keys/:key — Delete an API key.
+pub async fn delete_key_handler(
+    State(state): State<Arc<AppState>>,
+    Path(key): Path<String>,
+) -> impl IntoResponse {
+    if state.auth.delete_key(&key) {
+        (StatusCode::OK, Json(json!({ "deleted": true }))).into_response()
+    } else {
+        (StatusCode::NOT_FOUND, Json(json!({ "error": "Key not found" }))).into_response()
+    }
 }
 
 // --- Fork Management REST API ---
