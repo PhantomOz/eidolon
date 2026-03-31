@@ -2,7 +2,7 @@ use alloy_consensus::{Transaction, TxEnvelope};
 use alloy_eips::eip2718::Decodable2718;
 use alloy_primitives::{Address, Bytes, TxKind, B256, U256, U64, keccak256};
 use eidolon_evm::tracer::TraceStep;
-use eidolon_evm::Executor;
+use eidolon_evm::{Executor, SimulationResult};
 use jsonrpsee::core::{async_trait, RpcResult};
 use jsonrpsee::proc_macros::rpc;
 use jsonrpsee::types::ErrorObject;
@@ -286,6 +286,9 @@ pub trait EidolonApi {
 
     #[method(name = "eidolon_reset", blocking)]
     fn eidolon_reset(&self, params: Option<ResetParams>) -> RpcResult<bool>;
+
+    #[method(name = "eidolon_simulateTransaction", blocking)]
+    fn simulate_transaction(&self, request: CallRequest) -> RpcResult<SimulationResult>;
 
     // --- Cheatcodes: Anvil-compatible aliases ---
 
@@ -1179,6 +1182,27 @@ impl EidolonApiServer for EidolonRpc {
 
         info!("🔄 eidolon_reset");
         Ok(true)
+    }
+
+    fn simulate_transaction(&self, request: CallRequest) -> RpcResult<SimulationResult> {
+        let mut executor = self.executor.write();
+        let caller = request.from.unwrap_or(Address::ZERO);
+        let value = request.value.unwrap_or(U256::ZERO);
+        let data = request.data.unwrap_or_default();
+
+        info!(
+            "🔬 eidolon_simulateTransaction: from={:?} to={:?}",
+            caller, request.to
+        );
+
+        match executor.simulate_transaction(caller, request.to, value, data) {
+            Ok(result) => Ok(result),
+            Err(e) => Err(ErrorObject::owned(
+                -32000,
+                format!("Simulation Error: {:?}", e),
+                None::<()>,
+            )),
+        }
     }
 
     // --- Anvil-compatible aliases ---
