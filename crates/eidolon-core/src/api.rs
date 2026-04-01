@@ -136,6 +136,41 @@ pub async fn delete_fork(
     }
 }
 
+// --- Fork Snapshots ---
+
+/// POST /api/forks/:id/snapshot — Create a snapshot.
+pub async fn snapshot_fork(
+    State(state): State<Arc<AppState>>,
+    Path(fork_id): Path<String>,
+) -> impl IntoResponse {
+    match state.fork_manager.snapshot_fork(&fork_id) {
+        Some(snap_id) => {
+            (StatusCode::CREATED, Json(json!({ "snapshot_id": snap_id, "fork_id": fork_id }))).into_response()
+        }
+        None => {
+            (StatusCode::NOT_FOUND, Json(json!({ "error": "Fork not found" }))).into_response()
+        }
+    }
+}
+
+/// POST /api/forks/:id/restore/:snap_id — Restore to a snapshot.
+pub async fn restore_fork(
+    State(state): State<Arc<AppState>>,
+    Path((fork_id, snap_id)): Path<(String, u64)>,
+) -> impl IntoResponse {
+    match state.fork_manager.restore_fork(&fork_id, snap_id) {
+        Some(true) => {
+            (StatusCode::OK, Json(json!({ "restored": true, "fork_id": fork_id, "snapshot_id": snap_id }))).into_response()
+        }
+        Some(false) => {
+            (StatusCode::BAD_REQUEST, Json(json!({ "error": "Invalid or expired snapshot ID" }))).into_response()
+        }
+        None => {
+            (StatusCode::NOT_FOUND, Json(json!({ "error": "Fork not found" }))).into_response()
+        }
+    }
+}
+
 // --- JSON-RPC Router ---
 
 /// POST /rpc/:fork_id — Route JSON-RPC requests to the correct fork.

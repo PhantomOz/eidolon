@@ -122,6 +122,24 @@ impl ForkManager {
         self.forks.read().len()
     }
 
+    /// Create a snapshot of a fork's state.
+    pub fn snapshot_fork(&self, fork_id: &str) -> Option<u64> {
+        let fork = self.get_fork(fork_id)?;
+        let mut executor = fork.executor.write();
+        let snap_id = executor.take_snapshot();
+        info!("📸 Fork {} snapshot: id={}", fork_id, snap_id);
+        Some(snap_id)
+    }
+
+    /// Restore a fork to a previous snapshot.
+    pub fn restore_fork(&self, fork_id: &str, snapshot_id: u64) -> Option<bool> {
+        let fork = self.get_fork(fork_id)?;
+        let mut executor = fork.executor.write();
+        let success = executor.revert_snapshot(snapshot_id);
+        info!("⏪ Fork {} restore: snap_id={}, success={}", fork_id, snapshot_id, success);
+        Some(success)
+    }
+
     /// Save all fork states to Redis.
     pub fn save_all_forks(&self, conn: &mut redis::Connection) {
         use redis::Commands;

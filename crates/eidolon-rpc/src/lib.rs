@@ -2,7 +2,7 @@ use alloy_consensus::{Transaction, TxEnvelope};
 use alloy_eips::eip2718::Decodable2718;
 use alloy_primitives::{Address, Bytes, TxKind, B256, U256, U64, keccak256};
 use eidolon_evm::tracer::TraceStep;
-use eidolon_evm::{Executor, SimulationResult};
+use eidolon_evm::{BundleSimulationResult, Executor, SimulationResult};
 use jsonrpsee::core::{async_trait, RpcResult};
 use jsonrpsee::proc_macros::rpc;
 use jsonrpsee::types::ErrorObject;
@@ -289,6 +289,9 @@ pub trait EidolonApi {
 
     #[method(name = "eidolon_simulateTransaction", blocking)]
     fn simulate_transaction(&self, request: CallRequest) -> RpcResult<SimulationResult>;
+
+    #[method(name = "eidolon_simulateBundle", blocking)]
+    fn simulate_bundle(&self, transactions: Vec<CallRequest>) -> RpcResult<BundleSimulationResult>;
 
     // --- Cheatcodes: Anvil-compatible aliases ---
 
@@ -1200,6 +1203,36 @@ impl EidolonApiServer for EidolonRpc {
             Err(e) => Err(ErrorObject::owned(
                 -32000,
                 format!("Simulation Error: {:?}", e),
+                None::<()>,
+            )),
+        }
+    }
+
+    fn simulate_bundle(&self, transactions: Vec<CallRequest>) -> RpcResult<BundleSimulationResult> {
+        let mut executor = self.executor.write();
+
+        info!(
+            "📦 eidolon_simulateBundle: {} transactions",
+            transactions.len()
+        );
+
+        let txs: Vec<_> = transactions
+            .into_iter()
+            .map(|req| {
+                (
+                    req.from.unwrap_or(Address::ZERO),
+                    req.to,
+                    req.value.unwrap_or(U256::ZERO),
+                    req.data.unwrap_or_default(),
+                )
+            })
+            .collect();
+
+        match executor.simulate_bundle(txs) {
+            Ok(result) => Ok(result),
+            Err(e) => Err(ErrorObject::owned(
+                -32000,
+                format!("Bundle Simulation Error: {:?}", e),
                 None::<()>,
             )),
         }

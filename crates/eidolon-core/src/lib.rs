@@ -77,6 +77,9 @@ impl EidolonNode {
             .route("/api/forks", get(api::list_forks))
             .route("/api/forks/{id}", get(api::get_fork))
             .route("/api/forks/{id}", delete(api::delete_fork))
+            // Fork Snapshots
+            .route("/api/forks/{id}/snapshot", post(api::snapshot_fork))
+            .route("/api/forks/{id}/restore/{snap_id}", post(api::restore_fork))
             // JSON-RPC Router
             .route("/rpc/{fork_id}", post(api::handle_rpc))
             // Auth middleware

@@ -43,6 +43,65 @@ pub struct SimulationResult {
     pub return_data: Bytes,
     pub logs: Vec<revm::primitives::Log>,
     pub state_diffs: Vec<AccountDiff>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub decoded_call: Option<DecodedCall>,
+}
+
+/// Result of simulating a bundle of transactions.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct BundleSimulationResult {
+    pub results: Vec<SimulationResult>,
+    pub total_gas_used: u64,
+    pub bundle_success: bool,
+}
+
+/// A decoded function call (4-byte selector → human-readable).
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct DecodedCall {
+    pub selector: String,
+    pub function_name: String,
+}
+
+/// Decode a 4-byte function selector into a human-readable name.
+pub fn decode_selector(data: &[u8]) -> Option<DecodedCall> {
+    if data.len() < 4 {
+        return None;
+    }
+    let selector = format!("0x{:02x}{:02x}{:02x}{:02x}", data[0], data[1], data[2], data[3]);
+    let name = match selector.as_str() {
+        // ERC20
+        "0xa9059cbb" => "transfer(address,uint256)",
+        "0x095ea7b3" => "approve(address,uint256)",
+        "0x23b872dd" => "transferFrom(address,address,uint256)",
+        "0x70a08231" => "balanceOf(address)",
+        "0xdd62ed3e" => "allowance(address,address)",
+        "0x18160ddd" => "totalSupply()",
+        // ERC721
+        "0x42842e0e" => "safeTransferFrom(address,address,uint256)",
+        "0x6352211e" => "ownerOf(uint256)",
+        "0xe985e9c5" => "isApprovedForAll(address,address)",
+        "0xa22cb465" => "setApprovalForAll(address,bool)",
+        // Uniswap V2
+        "0x38ed1739" => "swapExactTokensForTokens(uint256,uint256,address[],address,uint256)",
+        "0x7ff36ab5" => "swapExactETHForTokens(uint256,address[],address,uint256)",
+        "0x18cbafe5" => "swapExactTokensForETH(uint256,uint256,address[],address,uint256)",
+        "0xe8e33700" => "addLiquidity(address,address,uint256,uint256,uint256,uint256,address,uint256)",
+        // Uniswap V3
+        "0x414bf389" => "exactInputSingle((address,address,uint24,address,uint256,uint256,uint256,uint160))",
+        "0xc04b8d59" => "exactInput((bytes,address,uint256,uint256,uint256))",
+        // Common
+        "0x3593564c" => "execute(bytes,bytes[],uint256)",
+        "0xb6f9de95" => "swapExactETHForTokensSupportingFeeOnTransferTokens(uint256,address[],address,uint256)",
+        "0xd0e30db0" => "deposit()",
+        "0x2e1a7d4d" => "withdraw(uint256)",
+        "0x150b7a02" => "onERC721Received(address,address,uint256,bytes)",
+        "0xf23a6e61" => "onERC1155Received(address,address,uint256,uint256,bytes)",
+        _ => return Some(DecodedCall { selector, function_name: "unknown".to_string() }),
+    };
+    Some(DecodedCall {
+        selector,
+        function_name: name.to_string(),
+    })
 }
 
 // --- Persistence Data Structures ---
@@ -455,6 +514,7 @@ impl Executor {
         value: U256,
         data: Bytes,
     ) -> Result<SimulationResult> {
+        let data_for_decode = data.clone();
         let transact_to = match to {
             Some(addr) => TransactTo::Call(addr),
             None => TransactTo::Create,
@@ -540,9 +600,83 @@ impl Executor {
         Ok(SimulationResult {
             success,
             gas_used,
-            return_data,
+            return_data: return_data.clone(),
             logs,
             state_diffs,
+            decoded_call: decode_selector(&data_for_decode),
+        })
+    }
+
+    /// Simulate a bundle of transactions sequentially.
+    /// Uses snapshot/revert so no state is permanently changed.
+    pub fn simulate_bundle(
+        &mut self,
+        transactions: Vec<(Address, Option<Address>, U256, Bytes)>,
+    ) -> Result<BundleSimulationResult> {
+        // Take a snapshot before the bundle
+        let snap_id = self.take_snapshot();
+
+        let mut results = Vec::with_capacity(transactions.len());
+        let mut total_gas = 0u64;
+        let mut all_success = true;
+
+        for (caller, to, value, data) in transactions {
+            // Execute each tx (commits state so next tx sees changes)
+            let result = self.transact(caller, to, value, data.clone());
+
+            match result {
+                Ok(exec_result) => {
+                    let (success, gas_used, return_data, logs) = match &exec_result {
+                        ExecutionResult::Success { gas_used, output, logs, .. } => {
+                            let d = match output {
+                                Output::Call(bytes) => bytes.clone(),
+                                Output::Create(bytes, _) => bytes.clone(),
+                            };
+                            (true, *gas_used, d, logs.clone())
+                        }
+                        ExecutionResult::Revert { gas_used, output, .. } => {
+                            (false, *gas_used, output.clone(), vec![])
+                        }
+                        ExecutionResult::Halt { gas_used, .. } => {
+                            (false, *gas_used, Bytes::default(), vec![])
+                        }
+                    };
+
+                    total_gas += gas_used;
+                    if !success {
+                        all_success = false;
+                    }
+
+                    results.push(SimulationResult {
+                        success,
+                        gas_used,
+                        return_data,
+                        logs,
+                        state_diffs: vec![], // Individual diffs not tracked in bundle mode
+                        decoded_call: decode_selector(&data),
+                    });
+                }
+                Err(_e) => {
+                    all_success = false;
+                    results.push(SimulationResult {
+                        success: false,
+                        gas_used: 0,
+                        return_data: Bytes::default(),
+                        logs: vec![],
+                        state_diffs: vec![],
+                        decoded_call: decode_selector(&data),
+                    });
+                }
+            }
+        }
+
+        // Revert to snapshot — bundle didn't permanently change state
+        self.revert_snapshot(snap_id);
+
+        Ok(BundleSimulationResult {
+            results,
+            total_gas_used: total_gas,
+            bundle_success: all_success,
         })
     }
 

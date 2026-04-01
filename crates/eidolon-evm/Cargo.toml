@@ -11,3 +11,6 @@ serde = { version = "1.0", features = ["derive", "rc"] }
 eidolon-forkdb = { path = "../../crates/eidolon-forkdb" }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
+
+[dev-dependencies]
+serde_json = "1.0"

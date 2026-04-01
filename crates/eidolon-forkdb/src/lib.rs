@@ -11,7 +11,7 @@ use tracing::{info, warn};
 
 /// The Backend that fetches data from RPC
 pub struct RpcBackend {
-    config: ForkConfig,
+    pub config: ForkConfig,
     agent: ureq::Agent,
 }
 
@@ -165,4 +165,74 @@ pub fn fetch_latest_block_number(rpc_url: &str) -> Result<u64, anyhow::Error> {
     let num = u64::from_str_radix(hex_val.trim_start_matches("0x"), 16)?;
 
     Ok(num)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use revm::Database;
+
+    #[test]
+    fn block_tag_returns_latest_when_no_block_number() {
+        let backend = RpcBackend::new(ForkConfig {
+            rpc_url: "http://localhost:8545".to_string(),
+            block_number: None,
+        });
+        assert_eq!(backend.block_tag(), "latest");
+    }
+
+    #[test]
+    fn block_tag_returns_hex_when_block_number_set() {
+        let backend = RpcBackend::new(ForkConfig {
+            rpc_url: "http://localhost:8545".to_string(),
+            block_number: Some(18_000_000),
+        });
+        assert_eq!(backend.block_tag(), "0x112a880");
+    }
+
+    #[test]
+    fn block_tag_returns_hex_for_zero() {
+        let backend = RpcBackend::new(ForkConfig {
+            rpc_url: "http://localhost:8545".to_string(),
+            block_number: Some(0),
+        });
+        assert_eq!(backend.block_tag(), "0x0");
+    }
+
+    #[test]
+    fn new_fork_db_creates_empty_cache() {
+        let db = new_fork_db("http://localhost:8545".to_string(), Some(100));
+        // A fresh CacheDB should have no accounts
+        assert!(db.accounts.is_empty());
+    }
+
+    #[test]
+    fn fork_db_insert_and_read_account() {
+        let mut db = new_fork_db("http://localhost:8545".to_string(), Some(100));
+        let addr = Address::repeat_byte(0x01);
+        let info = AccountInfo {
+            balance: U256::from(1000),
+            nonce: 5,
+            ..Default::default()
+        };
+        db.insert_account_info(addr, info.clone());
+
+        // Reading from cache should not hit the network
+        let result = db.basic(addr).unwrap().unwrap();
+        assert_eq!(result.balance, U256::from(1000));
+        assert_eq!(result.nonce, 5);
+    }
+
+    #[test]
+    fn fork_db_insert_and_read_storage() {
+        let mut db = new_fork_db("http://localhost:8545".to_string(), Some(100));
+        let addr = Address::repeat_byte(0x02);
+
+        // Insert account first so storage operations work
+        db.insert_account_info(addr, AccountInfo::default());
+        db.insert_account_storage(addr, U256::from(0), U256::from(42)).unwrap();
+
+        let val = db.storage(addr, U256::from(0)).unwrap();
+        assert_eq!(val, U256::from(42));
+    }
 }
