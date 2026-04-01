@@ -4,7 +4,7 @@
 
 const API_BASE = window.location.port === '5173'
   ? 'http://localhost:8545'
-  : window.location.origin;
+  : (import.meta.env.VITE_API_URL || 'https://eidolon-production-fae5.up.railway.app');
 
 // ---- API Client ----
 
