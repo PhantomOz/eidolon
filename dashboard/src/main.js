@@ -113,7 +113,7 @@ window.refreshOverview = async function() {
           <thead><tr><th>Fork ID</th><th>Chain</th><th>Block</th><th>RPC</th></tr></thead>
           <tbody>${forksData.forks.map(f => `
             <tr>
-              <td style="font-family:var(--font-mono);color:var(--accent-hover)">${f.fork_id}</td>
+              <td style="font-family:var(--font-mono);color:var(--accent-hover)">${f.id}</td>
               <td>${chainName(f.chain_id)}</td>
               <td style="font-family:var(--font-mono)">${f.block_number}</td>
               <td style="font-family:var(--font-mono);font-size:11px;color:var(--text-muted)">${f.rpc_endpoint}</td>
@@ -151,7 +151,7 @@ window.refreshForks = async function() {
     container.innerHTML = data.forks.map(fork => `
       <div class="fork-card">
         <div class="fork-card-header">
-          <span class="fork-name">${fork.fork_id}</span>
+          <span class="fork-name">${fork.id}</span>
           <span class="fork-chain-badge">${chainName(fork.chain_id)}</span>
         </div>
         <div class="fork-meta">
@@ -168,9 +168,9 @@ window.refreshForks = async function() {
           📋 ${fork.rpc_endpoint}
         </div>
         <div class="fork-actions">
-          <button class="btn btn-success btn-sm" onclick="snapshotFork('${fork.fork_id}')">📸 Snapshot</button>
-          <button class="btn btn-ghost btn-sm" onclick="promptRestore('${fork.fork_id}')">⏪ Restore</button>
-          <button class="btn btn-danger btn-sm" onclick="deleteFork('${fork.fork_id}')">🗑 Delete</button>
+          <button class="btn btn-success btn-sm" onclick="snapshotFork('${fork.id}')">📸 Snapshot</button>
+          <button class="btn btn-ghost btn-sm" onclick="promptRestore('${fork.id}')">⏪ Restore</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteFork('${fork.id}')">🗑 Delete</button>
         </div>
       </div>
     `).join('');
@@ -308,7 +308,7 @@ async function refreshSimForks() {
     const data = await eidolon.listForks();
     const select = document.getElementById('sim-fork');
     select.innerHTML = data.forks.map(f =>
-      `<option value="${f.fork_id}">${f.fork_id} (${chainName(f.chain_id)})</option>`
+      `<option value="${f.id}">${f.id} (${chainName(f.chain_id)})</option>`
     ).join('');
     if (data.forks.length === 0) {
       select.innerHTML = '<option disabled>No forks available — create one first</option>';
