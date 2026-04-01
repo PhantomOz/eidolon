@@ -1,0 +1,25 @@
+app = "eidolon"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PORT = "8545"
+  AUTH_ENABLED = "true"
+
+[http_service]
+  internal_port = 8545
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [http_service.concurrency]
+    type = "connections"
+    hard_limit = 200
+    soft_limit = 150
+
+[[vm]]
+  size = "shared-cpu-2x"
+  memory = "1gb"
