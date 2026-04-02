@@ -365,6 +365,16 @@ impl EidolonRpc {
         }
     }
 
+    /// Expose transactions for the REST API
+    pub fn expose_transactions(&self) -> Arc<RwLock<HashMap<B256, StoredTransaction>>> {
+        self.transactions.clone()
+    }
+
+    /// Expose blocks for the REST API
+    pub fn expose_blocks(&self) -> Arc<RwLock<Vec<VirtualBlock>>> {
+        self.blocks.clone()
+    }
+
     /// Compute a deterministic block hash from block metadata.
     fn compute_block_hash(number: U256, timestamp: U256, parent_hash: B256) -> B256 {
         let mut input = Vec::with_capacity(96);

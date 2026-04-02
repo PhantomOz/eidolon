@@ -58,6 +58,7 @@ window.showPage = function(pageName) {
   else if (pageName === 'forks') refreshForks();
   else if (pageName === 'keys') refreshKeys();
   else if (pageName === 'simulate') refreshSimForks();
+  else if (pageName === 'testnet' && window.currentTestnetForkId) refreshTestnet();
 };
 
 document.querySelectorAll('.nav-link').forEach(link => {
@@ -168,6 +169,7 @@ window.refreshForks = async function() {
           📋 ${API_BASE}/rpc/${fork.id}
         </div>
         <div class="fork-actions">
+          <button class="btn btn-primary btn-sm" onclick="openTestnet('${fork.id}')">🔍 Explore Testnet</button>
           <button class="btn btn-success btn-sm" onclick="snapshotFork('${fork.id}')">📸 Snapshot</button>
           <button class="btn btn-ghost btn-sm" onclick="promptRestore('${fork.id}')">⏪ Restore</button>
           <button class="btn btn-danger btn-sm" onclick="deleteFork('${fork.id}')">🗑 Delete</button>
@@ -428,4 +430,89 @@ refreshOverview();
 setInterval(() => {
   const activePage = document.querySelector('.page.active');
   if (activePage?.id === 'page-overview') refreshOverview();
+  if (activePage?.id === 'page-testnet') refreshTestnet();
 }, 30000);
+
+// ---- Virtual Testnet ----
+
+window.currentTestnetForkId = null;
+
+window.openTestnet = async function(id) {
+  window.currentTestnetForkId = id;
+  const forks = await eidolon.listForks();
+  const fork = forks.forks.find(f => f.id === id);
+  if (fork) {
+    document.getElementById('testnet-title').textContent = `Fork: ${fork.id}`;
+    document.getElementById('testnet-subtitle').textContent = `Chain ID: ${fork.chain_id} • ${chainName(fork.chain_id)}`;
+  }
+  showPage('testnet');
+};
+
+window.refreshTestnet = async function() {
+  if (!window.currentTestnetForkId) return;
+  const id = window.currentTestnetForkId;
+  const container = document.getElementById('testnet-txs');
+
+  try {
+    const data = await api(`/api/forks/${id}/transactions`);
+    
+    if (data.transactions.length === 0) {
+      container.innerHTML = '<p class="empty-state">No transactions recorded on this testnet yet.</p>';
+      return;
+    }
+
+    container.innerHTML = data.transactions.map(tx => `
+      <div class="tx-item">
+        <div class="tx-item-left">
+          <span style="color:var(--accent-hover)">${tx.hash}</span>
+          <span style="color:var(--text-muted)">Block: ${tx.block_number}</span>
+          <span>From: ${tx.from} &rarr; ${tx.to || 'Contract Creation'}</span>
+        </div>
+        <div class="tx-item-right">
+          <span class="tx-status ${tx.status ? 'success' : 'failed'}">${tx.status ? '✓ Success' : '✗ Reverted'}</span>
+          <span style="color:var(--text-muted)">Gas: ${formatNumber(tx.gas_used)}</span>
+          <span class="tx-method">${tx.input === '0x' ? 'Transfer' : tx.input.slice(0, 10)}</span>
+        </div>
+      </div>
+    `).join('');
+  } catch(e) {
+    container.innerHTML = `<p class="empty-state" style="color:var(--danger)">Failed to load transactions: ${e.message}</p>`;
+  }
+};
+
+window.runCheatcode = async function(action) {
+  if (!window.currentTestnetForkId) return;
+  const id = window.currentTestnetForkId;
+  
+  try {
+    if (action === 'setBalance') {
+      const addr = document.getElementById('cheat-balance-addr').value;
+      const val = document.getElementById('cheat-balance-val').value;
+      if (!addr || !val) throw new Error("Missing inputs");
+      await eidolon.rpc(id, 'anvil_setBalance', [addr, val]);
+      showToast('Balance updated', 'success');
+      
+    } else if (action === 'impersonate') {
+      const addr = document.getElementById('cheat-impersonate-addr').value;
+      if (!addr) throw new Error("Missing address");
+      await eidolon.rpc(id, 'anvil_impersonateAccount', [addr]);
+      showToast(`Impersonating ${addr}`, 'success');
+      
+    } else if (action === 'stopImpersonate') {
+      const addr = document.getElementById('cheat-impersonate-addr').value;
+      if (!addr) throw new Error("Missing address");
+      await eidolon.rpc(id, 'anvil_stopImpersonatingAccount', [addr]);
+      showToast(`Stopped impersonating ${addr}`, 'success');
+
+    } else if (action === 'mine') {
+      const blocks = parseInt(document.getElementById('cheat-mine-blocks').value) || 1;
+      await eidolon.rpc(id, 'anvil_mine', [ `0x${blocks.toString(16)}` ]);
+      showToast(`Mined ${blocks} block(s)`, 'success');
+    }
+    
+    // Refresh ledger after cheatcode
+    refreshTestnet();
+  } catch(e) {
+    showToast('Cheatcode failed: ' + e.message, 'error');
+  }
+};

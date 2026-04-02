@@ -27,6 +27,9 @@ pub struct ForkInfo {
     pub rpc_endpoint: String,
 }
 
+use eidolon_rpc::{StoredTransaction, VirtualBlock};
+use alloy_primitives::B256;
+
 /// A managed fork instance.
 pub struct Fork {
     pub id: String,
@@ -34,6 +37,8 @@ pub struct Fork {
     pub rpc_url: String,
     pub executor: Arc<RwLock<Executor>>,
     pub rpc_module: RpcModule<EidolonRpc>,
+    pub transactions: Arc<RwLock<HashMap<B256, StoredTransaction>>>,
+    pub blocks: Arc<RwLock<Vec<VirtualBlock>>>,
 }
 
 impl Fork {
@@ -78,6 +83,8 @@ impl ForkManager {
         let shared_executor = Arc::new(RwLock::new(executor));
 
         let rpc = EidolonRpc::new(shared_executor.clone(), chain_id);
+        let transactions = rpc.expose_transactions();
+        let blocks = rpc.expose_blocks();
         let rpc_module = rpc.into_rpc();
 
         let fork = Arc::new(Fork {
@@ -86,6 +93,8 @@ impl ForkManager {
             rpc_url,
             executor: shared_executor,
             rpc_module,
+            transactions,
+            blocks,
         });
 
         self.forks.write().insert(id.clone(), fork.clone());

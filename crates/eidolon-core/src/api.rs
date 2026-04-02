@@ -138,6 +138,47 @@ pub async fn delete_fork(
 
 // --- Fork Snapshots ---
 
+/// GET /api/forks/:id/transactions — Get transactions for a fork.
+pub async fn get_fork_transactions(
+    State(state): State<Arc<AppState>>,
+    Path(fork_id): Path<String>,
+) -> impl IntoResponse {
+    let fork = match state.fork_manager.get_fork(&fork_id) {
+        Some(f) => f,
+        None => return (StatusCode::NOT_FOUND, Json(json!({ "error": "Fork not found" }))).into_response(),
+    };
+
+    let blocks = fork.blocks.read();
+    let txs = fork.transactions.read();
+
+    let mut result = Vec::new();
+    
+    for block in blocks.iter() {
+        for tx_hash in block.transactions.iter() {
+            if let Some(stored) = txs.get(tx_hash) {
+                result.push(json!({
+                    "hash": tx_hash,
+                    "block_number": stored.block_number.to_string(),
+                    "from": stored.from,
+                    "to": stored.to,
+                    "value": stored.value.to_string(),
+                    "gas_used": stored.gas_used,
+                    "status": stored.status,
+                    "contract_address": stored.contract_address,
+                    "input": stored.input,
+                }));
+            }
+        }
+    }
+
+    result.reverse();
+
+    (StatusCode::OK, Json(json!({
+        "transactions": result,
+        "count": result.len()
+    }))).into_response()
+}
+
 /// POST /api/forks/:id/snapshot — Create a snapshot.
 pub async fn snapshot_fork(
     State(state): State<Arc<AppState>>,

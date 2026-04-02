@@ -126,6 +126,58 @@
                 </div>
             </div>
 
+            <!-- Virtual Testnet Workspace -->
+            <div id="page-testnet" class="page">
+                <div class="page-header" style="flex-direction: column; align-items: flex-start; gap: 8px;">
+                    <button class="btn btn-ghost btn-sm" onclick="showPage('forks')" style="margin-left: -12px;">← Back to Forks</button>
+                    <div style="display: flex; justify-content: space-between; width: 100%; align-items: center;">
+                        <div>
+                            <h1 id="testnet-title">Virtual Testnet</h1>
+                            <p id="testnet-subtitle" style="color:var(--text-muted);font-size:14px;margin-top:4px"></p>
+                        </div>
+                        <button class="btn btn-ghost" onclick="refreshTestnet()">↻ Refresh Ledger</button>
+                    </div>
+                </div>
+
+                <div class="testnet-layout">
+                    <!-- Left Column: Transaction Ledger -->
+                    <div class="testnet-ledger card">
+                        <div class="card-header">
+                            <h2>Transaction Ledger</h2>
+                        </div>
+                        <div id="testnet-txs" class="table-container">
+                            <p class="empty-state">Loading transactions...</p>
+                        </div>
+                    </div>
+
+                    <!-- Right Column: Cheatcodes -->
+                    <div class="testnet-cheatcodes card">
+                        <h3>Cheatcodes</h3>
+                        <p style="color:var(--text-muted);font-size:12px;margin-bottom:16px;">Quickly manipulate testnet state.</p>
+                        
+                        <div class="cheat-group">
+                            <h4>Set Balance</h4>
+                            <input type="text" id="cheat-balance-addr" class="input input-sm" placeholder="Address (0x...)" />
+                            <input type="text" id="cheat-balance-val" class="input input-sm" placeholder="Value (Wei)" />
+                            <button class="btn btn-primary btn-sm btn-full" onclick="runCheatcode('setBalance')">Set Balance</button>
+                        </div>
+
+                        <div class="cheat-group">
+                            <h4>Impersonate Account</h4>
+                            <input type="text" id="cheat-impersonate-addr" class="input input-sm" placeholder="Address (0x...)" />
+                            <button class="btn btn-primary btn-sm btn-full" onclick="runCheatcode('impersonate')">Start Impersonating</button>
+                            <button class="btn btn-ghost btn-sm btn-full" style="margin-top:8px" onclick="runCheatcode('stopImpersonate')">Stop Impersonating</button>
+                        </div>
+                        
+                        <div class="cheat-group">
+                            <h4>Mine Blocks</h4>
+                            <input type="number" id="cheat-mine-blocks" class="input input-sm" placeholder="Blocks (e.g. 1)" value="1" />
+                            <button class="btn btn-primary btn-sm btn-full" onclick="runCheatcode('mine')">Mine</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <!-- Keys Page -->
             <div id="page-keys" class="page">
                 <div class="page-header">
