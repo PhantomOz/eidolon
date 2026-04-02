@@ -210,6 +210,9 @@ pub trait EidolonApi {
     #[method(name = "eidolon_setBalance", blocking)]
     fn set_balance(&self, address: Address, amount: U256) -> RpcResult<bool>;
 
+    #[method(name = "eidolon_setErc20Balance", blocking)]
+    fn set_erc20_balance(&self, token: Address, target: Address, amount: U256) -> RpcResult<bool>;
+
     #[method(name = "eth_getStorageAt", blocking)]
     fn get_storage_at(&self, address: Address, slot: U256, _block: Option<String>) -> RpcResult<U256>;
 
@@ -880,6 +883,66 @@ impl EidolonApiServer for EidolonRpc {
         executor.set_balance(address, amount);
         info!("🧙 eidolon_setBalance({:?}) -> {}", address, amount);
         Ok(true)
+    }
+
+    fn set_erc20_balance(&self, token: Address, target: Address, amount: U256) -> RpcResult<bool> {
+        let mut executor = self.executor.write();
+
+        let mut slot_found = None;
+
+        // Try slot 0 to 50
+        for slot in 0..50 {
+            let slot_u256 = U256::from(slot);
+            
+            // keystring: keccak256(abi.encode(target, slot_u256))
+            let mut buf = [0u8; 64];
+            buf[12..32].copy_from_slice(target.as_slice());
+            buf[32..64].copy_from_slice(&slot_u256.to_be_bytes::<32>());
+            let storage_key = alloy_primitives::keccak256(&buf);
+            
+            let key_u256 = U256::from_be_bytes(storage_key.0);
+            
+            // Backup old
+            let old_val = executor.get_storage_at(token, key_u256).unwrap_or_default();
+            
+            // Dummy write magic
+            let magic = U256::from(0xDEADBEEF_u64);
+            let _ = executor.set_storage_at(token, key_u256, magic);
+            
+            // Check balanceOf
+            let mut calldata = Vec::with_capacity(36);
+            calldata.extend_from_slice(&[0x70, 0xa0, 0x82, 0x31]);
+            let mut padded = [0u8; 32];
+            padded[12..32].copy_from_slice(target.as_slice());
+            calldata.extend_from_slice(&padded);
+            
+            let res = executor.call(Address::ZERO, Some(token), U256::ZERO, Bytes::from(calldata));
+            
+            // Restore immediately!
+            let _ = executor.set_storage_at(token, key_u256, old_val);
+            
+            if let Ok(ret) = res {
+                if ret.len() >= 32 {
+                    let bal = U256::from_be_slice(&ret[..32]);
+                    if bal == magic {
+                        slot_found = Some(key_u256);
+                        break;
+                    }
+                }
+            }
+        }
+
+        if let Some(key) = slot_found {
+            let _ = executor.set_storage_at(token, key, amount);
+            info!("🧙 eidolon_setErc20Balance({:?}, user={:?}) -> {}", token, target, amount);
+            Ok(true)
+        } else {
+            Err(ErrorObject::owned(
+                -32000,
+                "Could not discover ERC20 balance storage slot.".to_string(),
+                None::<()>,
+            ))
+        }
     }
 
     fn get_storage_at(&self, address: Address, slot: U256, _block: Option<String>) -> RpcResult<U256> {

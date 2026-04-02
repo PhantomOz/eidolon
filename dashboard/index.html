@@ -156,10 +156,18 @@
                         <p style="color:var(--text-muted);font-size:12px;margin-bottom:16px;">Quickly manipulate testnet state.</p>
                         
                         <div class="cheat-group">
-                            <h4>Set Balance</h4>
+                            <h4>Set Balance (Native)</h4>
                             <input type="text" id="cheat-balance-addr" class="input input-sm" placeholder="Address (0x...)" />
                             <input type="text" id="cheat-balance-val" class="input input-sm" placeholder="Value (Wei)" />
-                            <button class="btn btn-primary btn-sm btn-full" onclick="runCheatcode('setBalance')">Set Balance</button>
+                            <button class="btn btn-primary btn-sm btn-full" onclick="runCheatcode('setBalance')">Set Native Balance</button>
+                        </div>
+
+                        <div class="cheat-group">
+                            <h4>Set ERC-20 Balance</h4>
+                            <input type="text" id="cheat-erc20-token" class="input input-sm" placeholder="Token Address (0x...)" />
+                            <input type="text" id="cheat-erc20-addr" class="input input-sm" placeholder="Wallet Address (0x...)" />
+                            <input type="text" id="cheat-erc20-val" class="input input-sm" placeholder="Value (Wei)" />
+                            <button class="btn btn-primary btn-sm btn-full" onclick="runCheatcode('setErc20Balance')">Set ERC-20 Balance</button>
                         </div>
 
                         <div class="cheat-group">

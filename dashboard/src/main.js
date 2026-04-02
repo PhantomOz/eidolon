@@ -489,9 +489,17 @@ window.runCheatcode = async function(action) {
       const addr = document.getElementById('cheat-balance-addr').value;
       const val = document.getElementById('cheat-balance-val').value;
       if (!addr || !val) throw new Error("Missing inputs");
-      await eidolon.rpc(id, 'anvil_setBalance', [addr, val]);
-      showToast('Balance updated', 'success');
+      await eidolon.rpc(id, 'eidolon_setBalance', [addr, val]);
+      showToast('Native Balance updated', 'success');
       
+    } else if (action === 'setErc20Balance') {
+      const token = document.getElementById('cheat-erc20-token').value;
+      const addr = document.getElementById('cheat-erc20-addr').value;
+      const val = document.getElementById('cheat-erc20-val').value;
+      if (!token || !addr || !val) throw new Error("Missing inputs");
+      await eidolon.rpc(id, 'eidolon_setErc20Balance', [token, addr, val]);
+      showToast('ERC-20 Balance updated', 'success');
+
     } else if (action === 'impersonate') {
       const addr = document.getElementById('cheat-impersonate-addr').value;
       if (!addr) throw new Error("Missing address");
