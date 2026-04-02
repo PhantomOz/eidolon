@@ -116,7 +116,7 @@ window.refreshOverview = async function() {
               <td style="font-family:var(--font-mono);color:var(--accent-hover)">${f.id}</td>
               <td>${chainName(f.chain_id)}</td>
               <td style="font-family:var(--font-mono)">${f.block_number}</td>
-              <td style="font-family:var(--font-mono);font-size:11px;color:var(--text-muted)">${f.rpc_endpoint}</td>
+              <td style="font-family:var(--font-mono);font-size:11px;color:var(--text-muted)">${API_BASE}/rpc/${f.id}</td>
             </tr>
           `).join('')}</tbody>
         </table>
@@ -164,8 +164,8 @@ window.refreshForks = async function() {
             <div class="fork-meta-value">${fork.chain_id}</div>
           </div>
         </div>
-        <div class="fork-rpc" onclick="copyToClipboard('${fork.rpc_endpoint}')" title="Click to copy">
-          📋 ${fork.rpc_endpoint}
+        <div class="fork-rpc" onclick="copyToClipboard('${API_BASE}/rpc/${fork.id}')" title="Click to copy">
+          📋 ${API_BASE}/rpc/${fork.id}
         </div>
         <div class="fork-actions">
           <button class="btn btn-success btn-sm" onclick="snapshotFork('${fork.id}')">📸 Snapshot</button>
