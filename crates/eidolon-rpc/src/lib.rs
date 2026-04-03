@@ -438,6 +438,44 @@ impl EidolonRpc {
         }
     }
 
+    /// Record a synthetic cheatcode transaction and mine a block automatically.
+    fn record_cheatcode_tx(&self, from: Address, input: String) {
+        let mut executor = self.executor.write();
+        executor.block_env.number += U256::from(1);
+        executor.block_env.timestamp += U256::from(12); // advance time exactly one block
+        let block_num = executor.block_env.number;
+        let timestamp = executor.block_env.timestamp;
+        drop(executor);
+
+        let parent_hash = {
+            let blocks = self.blocks.read();
+            blocks.last().map(|b| b.hash).unwrap_or(B256::ZERO)
+        };
+        let block_hash = Self::compute_block_hash(block_num, timestamp, parent_hash);
+
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&block_num.to_be_bytes::<32>());
+        buf.extend_from_slice(input.as_bytes());
+        let tx_hash = alloy_primitives::keccak256(&buf);
+
+        let stored = StoredTransaction {
+            from,
+            to: None,
+            value: U256::ZERO,
+            input: Bytes::from(input.as_bytes().to_vec()),
+            nonce: 0,
+            block_number: block_num,
+            block_hash,
+            gas_used: 21000,
+            contract_address: None,
+            logs: vec![],
+            status: true,
+        };
+
+        self.transactions.write().insert(tx_hash, stored);
+        self.record_block(block_num, timestamp, vec![tx_hash], U256::from(21000));
+    }
+
     /// Store a transaction and build its receipt data after execution.
     fn store_transaction(
         &self,
@@ -881,6 +919,8 @@ impl EidolonApiServer for EidolonRpc {
     fn set_balance(&self, address: Address, amount: U256) -> RpcResult<bool> {
         let mut executor = self.executor.write();
         executor.set_balance(address, amount);
+        drop(executor);
+        self.record_cheatcode_tx(address, format!("eidolon_setBalance({:?}, {})", address, amount));
         info!("🧙 eidolon_setBalance({:?}) -> {}", address, amount);
         Ok(true)
     }
@@ -934,6 +974,8 @@ impl EidolonApiServer for EidolonRpc {
 
         if let Some(key) = slot_found {
             let _ = executor.set_storage_at(token, key, amount);
+            drop(executor);
+            self.record_cheatcode_tx(target, format!("eidolon_setErc20Balance({:?}, target={:?}, amount={})", token, target, amount));
             info!("🧙 eidolon_setErc20Balance({:?}, user={:?}) -> {}", token, target, amount);
             Ok(true)
         } else {
@@ -1211,6 +1253,8 @@ impl EidolonApiServer for EidolonRpc {
     fn eidolon_impersonate_account(&self, address: Address) -> RpcResult<bool> {
         let mut executor = self.executor.write();
         executor.impersonate_account(address);
+        drop(executor);
+        self.record_cheatcode_tx(address, format!("eidolon_impersonateAccount({:?})", address));
         info!("🎭 eidolon_impersonateAccount({:?})", address);
         Ok(true)
     }
@@ -1218,6 +1262,8 @@ impl EidolonApiServer for EidolonRpc {
     fn eidolon_stop_impersonating_account(&self, address: Address) -> RpcResult<bool> {
         let mut executor = self.executor.write();
         executor.stop_impersonating_account(address);
+        drop(executor);
+        self.record_cheatcode_tx(address, format!("eidolon_stopImpersonatingAccount({:?})", address));
         info!("🎭 eidolon_stopImpersonatingAccount({:?})", address);
         Ok(true)
     }
@@ -1731,17 +1777,17 @@ mod tests {
         assert_eq!(rpc.executor.read().block_gas_limit, 50_000_000);
     }
 
-    // --- Cheatcode: eidolon_setBalance does not auto-mine ---
+    // --- Cheatcode: eidolon_setBalance mines synthetic ---
 
     #[test]
-    fn eidolon_set_balance_does_not_mine() {
+    fn eidolon_set_balance_mines_synthetic() {
         let rpc = test_rpc();
         let block_before = rpc.block_number().unwrap();
 
         rpc.set_balance(alice(), U256::from(12345)).unwrap();
 
         let block_after = rpc.block_number().unwrap();
-        assert_eq!(block_after, block_before); // no block mined
+        assert_eq!(block_after, block_before + U256::from(1)); // block mined for cheatcode
         let bal = rpc.get_balance(alice(), None).unwrap();
         assert_eq!(bal, U256::from(12345));
     }
